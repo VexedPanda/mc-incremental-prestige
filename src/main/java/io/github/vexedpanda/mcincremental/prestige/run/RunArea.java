@@ -16,10 +16,19 @@ public record RunArea(ChunkPos centre, int radiusChunks) {
 
     /**
      * The smallest simulation distance that keeps the whole area ticking wherever in it the player stands: from a
-     * corner chunk, the far edge is {@code 2 * radiusChunks} chunks away (2 for a 3x3 area).
+     * corner chunk, the far edge is {@code 2 * radiusChunks} chunks away (2 for a 3x3 area). Never below vanilla's
+     * minimum of {@value #MIN_SIMULATION_DISTANCE}.
      */
     public int simulationDistanceChunks() {
-        return 2 * radiusChunks;
+        return simulationDistanceChunks(radiusChunks);
+    }
+
+    /** Vanilla's smallest simulation distance. */
+    public static final int MIN_SIMULATION_DISTANCE = 2;
+
+    /** {@link #simulationDistanceChunks()} for an area of the given radius. */
+    public static int simulationDistanceChunks(int radiusChunks) {
+        return Math.max(MIN_SIMULATION_DISTANCE, 2 * radiusChunks);
     }
 
     /** Side length in blocks: the world border's size. */

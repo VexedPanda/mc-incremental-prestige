@@ -28,6 +28,8 @@ public class SimulationDistanceGameTests {
         // A 3x3 area's far edge is 2 chunks from a corner chunk; a 5x5 area's is 4.
         int r1 = new RunArea(new ChunkPos(0, 0), 1).simulationDistanceChunks();
         int r2 = new RunArea(new ChunkPos(0, 0), 2).simulationDistanceChunks();
+        int r0 = new RunArea(new ChunkPos(0, 0), 0).simulationDistanceChunks();
+        helper.assertTrue(r0 == 2, "A 1x1 area keeps vanilla's minimum simulation distance 2, got " + r0);
         helper.assertTrue(r1 == 2, "A radius-1 area needs simulation distance 2, got " + r1);
         helper.assertTrue(r2 == 4, "A radius-2 area needs simulation distance 4, got " + r2);
         helper.succeed();
