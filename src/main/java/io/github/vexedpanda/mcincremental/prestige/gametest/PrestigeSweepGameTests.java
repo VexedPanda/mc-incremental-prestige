@@ -298,6 +298,8 @@ public class PrestigeSweepGameTests {
                     ItemFrame placed = new ItemFrame(level, pos.east(4), Direction.UP);
                     placed.setItem(new ItemStack(Items.DIAMOND), false);
                     helper.assertTrue(level.addFreshEntity(placed), "The placed item frame should spawn");
+                    // The entities present at Run start are saved with the snapshot.
+                    RunRestartGameTests.simulateRestart(server);
                     BigInteger before = WorldEmc.balance(server);
 
                     PrestigeGameTests.runPrestigeCommand(helper);

@@ -4,6 +4,7 @@ import java.util.Comparator;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Supplier;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
@@ -12,6 +13,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -53,13 +56,9 @@ public final class RunSnapshots {
         int margin = RunAreaConfig.SWEEP_MARGIN_CHUNKS.get();
         int radius = area.radiusChunks() + margin;
         ChunkPos centre = area.centre();
-        // A region ticket's level drops by one per chunk from its centre: distance radius + 1 puts the whole snapshot
-        // box at block-ticking level, with one ring of full chunks around it as their neighbours.
-        int distance = radius + 1;
-        ServerChunkCache chunks = level.getChunkSource();
-        chunks.addRegionTicket(TICKET, centre, distance, centre);
-        try {
-            waitUntilTicking(chunks, centre, radius);
+        // Players (and the world border keeping them in) hold the area loaded from here on; the sweep loads it again
+        // if it was unloaded.
+        whileTicking(level, centre, radius, () -> {
             RunSnapshotData data = RunSnapshotData.get(server);
             data.chunks.clear();
             data.area = area;
@@ -75,10 +74,33 @@ public final class RunSnapshots {
                     data.chunks.put(ChunkPos.asLong(x, z), copies);
                 }
             }
+            data.entities.clear();
+            for (Entity entity : level.getAllEntities()) {
+                if (!(entity instanceof Player) && area.containsChunk(entity.chunkPosition(), margin)) {
+                    data.entities.add(entity.getUUID());
+                }
+            }
             data.setDirty();
+            return null;
+        });
+    }
+
+    /**
+     * Runs {@code body} with every chunk within {@code radius} of {@code centre} loaded and ticking, blocking the server
+     * thread until they are, then lets them go. Ticking chunks' entity sections are accessible, so the level's entity
+     * getters ({@code getAllEntities}, box queries) see their entities, as long as these are in memory: entities of a
+     * chunk that was unloaded load from disk asynchronously and are not waited for.
+     */
+    static <T> T whileTicking(ServerLevel level, ChunkPos centre, int radius, Supplier<T> body) {
+        // A region ticket's level drops by one per chunk from its centre: distance radius + 1 puts the whole box at
+        // block-ticking level, with one ring of full chunks around it as their neighbours.
+        int distance = radius + 1;
+        ServerChunkCache chunks = level.getChunkSource();
+        chunks.addRegionTicket(TICKET, centre, distance, centre);
+        try {
+            waitUntilTicking(chunks, centre, radius);
+            return body.get();
         } finally {
-            // Players (and the world border keeping them in) hold the area loaded from here on; the sweep loads it
-            // again if it was unloaded.
             chunks.removeRegionTicket(TICKET, centre, distance, centre);
         }
     }

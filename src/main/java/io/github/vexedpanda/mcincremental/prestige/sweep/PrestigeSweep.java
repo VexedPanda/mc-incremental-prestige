@@ -21,9 +21,9 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.GlowItemFrame;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.vehicle.ContainerEntity;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -59,7 +59,8 @@ public final class PrestigeSweep {
      *   <li>drain: every block entity's item and fluid handlers in the swept area (#30);
      *   <li>value: every changed position with EMC, a block entity or a fluid source;
      *   <li>remove: those positions, with no drops and no neighbour updates;
-     *   <li>entities (#31).
+     *   <li>fluid sources: changed positions still holding a valued fluid source (e.g. leaked into the margin);
+     *   <li>entities: dropped items, and value-holding entities that weren't there at Run start.
      * </ol>
      *
      * @return the EMC value of everything swept
@@ -115,14 +116,19 @@ public final class PrestigeSweep {
     }
 
     /**
-     * Refunds and removes entities in the swept chunks (entities phase, #31): every dropped item, whenever it appeared.
-     * Returns the EMC refunded.
+     * Refunds and removes entities in the swept chunks (entities phase, #31): every dropped item, whenever it appeared,
+     * and every other entity holding value (item form plus contents) that wasn't there at Run start, such as a chest
+     * minecart, item frame or armor stand placed during the Run. Returns the EMC refunded.
      */
     private static BigInteger sweepEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
-        List<Entity> inBox = new ArrayList<>();
-        for (Entity entity : level.getAllEntities()) {
-            if (area.containsChunk(entity.chunkPosition(), snapshot.marginChunks)) inBox.add(entity);
-        }
+        // Entities are only seen in accessible chunks: hold the swept chunks ticking while collecting them.
+        List<Entity> inBox = RunSnapshots.whileTicking(level, area.centre(), area.radiusChunks() + snapshot.marginChunks, () -> {
+            List<Entity> found = new ArrayList<>();
+            for (Entity entity : level.getAllEntities()) {
+                if (area.containsChunk(entity.chunkPosition(), snapshot.marginChunks)) found.add(entity);
+            }
+            return found;
+        });
         BigInteger total = BigInteger.ZERO;
         for (Entity entity : inBox) {
             if (entity.isRemoved()) continue;
@@ -130,7 +136,7 @@ public final class PrestigeSweep {
             if (entity instanceof ItemEntity item) {
                 value = emc(item.getItem());
             } else {
-                if (!isSweepable(entity)) continue;
+                if (snapshot.entities.contains(entity.getUUID()) || !isSweepable(entity)) continue;
                 value = entityValue(entity);
                 if (value <= 0) continue;
                 // Discarding a container entity spills its contents: they are refunded, so empty it first.
