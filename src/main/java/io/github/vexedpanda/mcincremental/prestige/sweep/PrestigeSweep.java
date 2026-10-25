@@ -30,7 +30,7 @@ import net.minecraft.world.level.chunk.PalettedContainer;
  */
 public final class PrestigeSweep {
     /**
-     * Chunks swept around the Run area, on every side. The snapshot already covers {@link RunSnapshots#MARGIN_CHUNKS};
+     * Chunks swept around the Run area, on every side. The snapshot already covers the configured sweep margin;
      * sweeping the margin is #31.
      */
     static final int MARGIN_CHUNKS = 0;
@@ -101,7 +101,7 @@ public final class PrestigeSweep {
     /** Every non-air position whose Block differs from the snapshot's, in the swept chunks. */
     private static List<BlockPos> changedPositions(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
         List<BlockPos> changed = new ArrayList<>();
-        int radius = RunArea.RADIUS_CHUNKS + Math.min(MARGIN_CHUNKS, snapshot.marginChunks);
+        int radius = area.radiusChunks() + Math.min(MARGIN_CHUNKS, snapshot.marginChunks);
         ChunkPos centre = area.centre();
         for (int cx = centre.x - radius; cx <= centre.x + radius; cx++) {
             for (int cz = centre.z - radius; cz <= centre.z + radius; cz++) {
