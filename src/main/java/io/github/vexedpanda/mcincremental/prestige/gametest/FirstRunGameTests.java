@@ -6,6 +6,7 @@ import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.controller.Prestige;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
+import io.github.vexedpanda.mcincremental.prestige.sweep.RunSnapshots;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
@@ -37,6 +38,8 @@ public class FirstRunGameTests {
 
             helper.assertTrue(RunAreas.current(server).equals(java.util.Optional.of(area)), "The first Run area should be current");
             helper.assertTrue(RunAreas.visited(server).equals(List.of(area)), "The first Run area should be the only one visited");
+            helper.assertTrue(RunSnapshots.area(server).equals(java.util.Optional.of(area)),
+                    "The first Run area should be snapshotted so the first Prestige sweeps it, got " + RunSnapshots.area(server));
             ChunkPos c = area.centre();
             helper.assertTrue(Math.floorMod(c.x, 3) == 0 && Math.floorMod(c.z, 3) == 0,
                     "First Run area should be centred on a GT grid chunk, got " + c);

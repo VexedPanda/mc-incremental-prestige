@@ -1,11 +1,17 @@
 package io.github.vexedpanda.mcincremental.prestige.controller;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
+import io.github.vexedpanda.mcincremental.prestige.sweep.PrestigeSweep;
+import io.github.vexedpanda.mcincremental.prestige.sweep.RunSnapshots;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
+import io.github.vexedpanda.mcincremental.prestige.run.StartingItems;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -20,21 +26,29 @@ public final class Prestige {
     private Prestige() {}
 
     /**
-     * Runs a Prestige for the world: wipes every player's inventory, starts a new Run area (border and world spawn
-     * move to it) and teleports every player there. The world's EMC balance and Knowledge are untouched.
+     * Runs a Prestige for the world: sweeps the current Run area into the world's EMC balance, wipes every player's
+     * inventory and gives them the starting items, starts a new Run area (border and world spawn move to it), snapshots it and teleports every player
+     * there. Knowledge is untouched, and the balance only grows by what the sweep credits.
      *
      * @return the new Run area
      */
     public static RunArea run(MinecraftServer server) {
-        // Prestige sweep of the old Run area goes here, before anything moves (#29).
+        long start = System.nanoTime();
+        BigInteger swept = PrestigeSweep.sweep(server);
+        WorldEmc.addEmc(server, swept);
+        long sweptAt = System.nanoTime();
         List<ServerPlayer> players = players(server);
-        for (ServerPlayer player : players) wipeInventory(player);
+        for (ServerPlayer player : players) {
+            wipeInventory(player);
+            StartingItems.give(player);
+        }
+        McIncrementalPrestige.LOGGER.info("Prestige: sweep credited {} EMC in {} ms", swept, (sweptAt - start) / 1_000_000);
         return startRun(server, players);
     }
 
     /**
-     * Starts the world's first Run if it has none yet: a new Run area, as after a Prestige, but with no sweep and no
-     * inventory wipe. Does nothing for a world that already has a Run.
+     * Starts the world's first Run if it has none yet: a new Run area, as after a Prestige, but with no sweep, wipe or
+     * starting items. Does nothing for a world that already has a Run.
      *
      * @return the first Run area, or empty if the world already had a Run
      */
@@ -45,11 +59,14 @@ public final class Prestige {
 
     /**
      * Starts a new Run: the single place a Run begins, for a Prestige and for the world's first Run. Chooses a new Run
-     * area (border and world spawn move to it) and teleports the players there.
+     * area (border and world spawn move to it), takes its Run start snapshot and teleports the players there.
      */
     private static RunArea startRun(MinecraftServer server, List<ServerPlayer> players) {
         RunArea area = RunAreas.beginRun(server);
-        // Run snapshot of the new area goes here, before players arrive (#29).
+        long snapshotStart = System.nanoTime();
+        RunSnapshots.take(server, area);
+        McIncrementalPrestige.LOGGER.info("New Run area {} snapshotted in {} ms",
+                area.centre(), (System.nanoTime() - snapshotStart) / 1_000_000);
         for (ServerPlayer player : players) RunAreas.teleport(player, area);
         return area;
     }
