@@ -125,7 +125,7 @@ public final class RunAreas {
 
     /**
      * Moves a player to the Run area's spawn point (the world spawn while it is still safe and in the area) and makes them respawn there: a bed or anchor respawn point from an
-     * earlier Run is forgotten.
+     * earlier Run is forgotten. Works from any dimension, even from inside a portal ({@link RunDimensionLock}).
      */
     public static void teleport(ServerPlayer player, RunArea area) {
         ServerLevel level = player.getServer().overworld();
@@ -137,6 +137,8 @@ public final class RunAreas {
             level.setDefaultSpawnPos(spawn, 0);
         }
         player.setRespawnPosition(Level.OVERWORLD, null, 0, false, false);
+        // Not a portal trip, even for a player standing in a portal: RunDimensionLock stops only portal trips.
+        player.portalProcess = null;
         player.teleportTo(level, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, player.getYRot(), player.getXRot());
         player.resetFallDistance();
     }

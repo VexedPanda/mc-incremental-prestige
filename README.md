@@ -13,13 +13,14 @@ NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-
   - placed fluids, dropped items, minecarts and item frames;
   - ender chests;
   - every online player's inventory: main inventory, armour, offhand, crafting grid, the stack on the cursor and the slots of an open menu (wiped before the starting items are given).
+- **Portals do nothing during a Run:** a Run stays in its dimension, so lighting a Nether portal frame fails and no portal (Nether, End, End gateway) moves players, mobs or items. Prestige's own teleport still works from any dimension.
 - **World-global EMC and Knowledge:** shared by every player, with no owners. Players who were offline during a Prestige have their items converted to EMC and are moved when they next join.
 - **EMC barrel:** a block linked to the world's EMC balance. It hands out one configured learned item or fluid, and turns anything piped in into EMC.
 - **Starting items:** every Run, and every join, makes sure players hold the configured starting items (by default a Transmutation Tablet).
 - **Singleplayer performance:** the simulation distance is capped to the Run area.
 - **GregTech EMC values:** when GregTech is installed, a ProjectE EMC mapper values GT items from their GT machine recipes (inputs' cost, fluids at their `fluid_emc` values; an unlisted fluid, such as a molten metal, at the value its own GT recipes give it), so machines, circuits and parts can be transmuted, and the Prestige sweep converts them back into EMC. Leaf materials no recipe makes (sulfur, titanium, ...) still need a price in ProjectE's `custom_emc.json`. Exclusions are listed in `GtRecipeEmcMapper`; ProjectE's `config/ProjectE/mapping.toml` can turn it off (`mappers.GTRecipeMapper.enabled`).
 
-Design notes: [`docs/prestige-sweep.md`](docs/prestige-sweep.md), [`docs/emc-barrel.md`](docs/emc-barrel.md), [`docs/simulation-distance.md`](docs/simulation-distance.md). The vocabulary and design decisions live in the pack repo's `GLOSSARY.md` and `docs/adr/`.
+Design notes: [`docs/prestige-sweep.md`](docs/prestige-sweep.md), [`docs/emc-barrel.md`](docs/emc-barrel.md), [`docs/simulation-distance.md`](docs/simulation-distance.md), [`docs/run-dimension.md`](docs/run-dimension.md). The vocabulary and design decisions live in the pack repo's `GLOSSARY.md` and `docs/adr/`.
 
 ## Configuration
 

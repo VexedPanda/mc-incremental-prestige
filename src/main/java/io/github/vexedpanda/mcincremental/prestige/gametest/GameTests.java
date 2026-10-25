@@ -8,7 +8,12 @@ import com.mojang.authlib.GameProfile;
 import io.netty.channel.embedded.EmbeddedChannel;
 import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.gametest.framework.GameTestHelper;
+import javax.annotation.Nullable;
+
 import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
@@ -52,7 +57,7 @@ public final class GameTests {
      * {@code makeMockServerPlayerInLevel} can't be used: ProjectE's datapack-sync handler throws for it.
      */
     public static ServerPlayer newPlayer(GameTestHelper helper, String name) {
-        return newPlayer(helper, name, null);
+        return newPlayer(helper, name, null, false);
     }
 
     /**
@@ -60,10 +65,19 @@ public final class GameTests {
      * including {@code displayClientMessage}) are added to {@code messages} instead of being sent.
      */
     public static ServerPlayer joinedRecordingPlayer(GameTestHelper helper, String name, List<Component> messages) {
-        return join(helper, newPlayer(helper, name, messages));
+        return join(helper, newPlayer(helper, name, messages, false));
     }
 
-    private static ServerPlayer newPlayer(GameTestHelper helper, String name, List<Component> messages) {
+    /**
+     * {@link #joinedPlayer} that can change dimension: mod payloads to it (e.g. ProjectE's knowledge sync on a
+     * dimension change) are dropped instead of throwing, since it never negotiated any mod channels.
+     */
+    public static ServerPlayer joinedTravellingPlayer(GameTestHelper helper, String name) {
+        return join(helper, newPlayer(helper, name, null, true));
+    }
+
+    private static ServerPlayer newPlayer(GameTestHelper helper, String name, List<Component> messages,
+            boolean dropModPayloads) {
         ServerLevel level = helper.getLevel();
         MinecraftServer server = level.getServer();
         GameProfile profile = new GameProfile(UUID.randomUUID(), name);
@@ -78,7 +92,14 @@ public final class GameTests {
                 };
         Connection connection = new Connection(PacketFlow.SERVERBOUND);
         new EmbeddedChannel(connection);
-        player.connection = new ServerGamePacketListenerImpl(server, connection, player, cookie);
+        player.connection = dropModPayloads
+                ? new ServerGamePacketListenerImpl(server, connection, player, cookie) {
+                    @Override
+                    public void send(Packet<?> packet, @Nullable PacketSendListener listener) {
+                        if (!(packet instanceof ClientboundCustomPayloadPacket)) super.send(packet, listener);
+                    }
+                }
+                : new ServerGamePacketListenerImpl(server, connection, player, cookie);
         player.moveTo(helper.absoluteVec(new Vec3(1.5, 1, 1.5)));
         return player;
     }
