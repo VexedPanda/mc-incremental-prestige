@@ -181,8 +181,7 @@ public class PrestigeSweepInventoryGameTests {
                     try {
                         player.getEnderChestInventory().setItem(0, new ItemStack(Items.DIAMOND, 3));
                         player.getEnderChestInventory().setItem(26, new ItemStack(Items.IRON_INGOT, 10));
-                        // The player's own inventory is wiped, not credited.
-                        player.getInventory().add(new ItemStack(Items.DIAMOND, 7));
+                        // The player holds only the starting tablet, worth 0, so the ender chest is the whole credit.
                         BigInteger before = WorldEmc.balance(server);
 
                         PrestigeGameTests.runPrestigeCommand(helper);

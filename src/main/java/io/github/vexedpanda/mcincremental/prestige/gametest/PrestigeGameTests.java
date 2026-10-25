@@ -19,6 +19,11 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.border.WorldBorder;
@@ -73,12 +78,87 @@ public class PrestigeGameTests {
 
                     assertHoldsOnlyOneTablet(helper, player);
                     helper.assertTrue(player.containerMenu.getCarried().isEmpty(), "Carried stack should be wiped");
-                    helper.assertTrue(WorldEmc.balance(server).equals(balance),
-                            "EMC balance should be kept: " + balance + ", got " + WorldEmc.balance(server));
+                    // The balance only grows, by what the inventory converts into.
+                    helper.assertTrue(WorldEmc.balance(server).compareTo(balance) > 0,
+                            "EMC balance should be kept and grow: " + balance + ", got " + WorldEmc.balance(server));
                     helper.assertTrue(WorldEmc.knowledge(server).equals(knowledge), "Knowledge should be kept");
-                    helper.assertTrue(WorldEmcGameTests.knowledge(player).getEmc().equals(balance),
+                    helper.assertTrue(WorldEmcGameTests.knowledge(player).getEmc().equals(WorldEmc.balance(server)),
                             "The player should still see the world balance");
                     player.discard();
+                }))
+                .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "prestige_convert_inventory", timeoutTicks = 400)
+    public static void prestigeConvertsAnOnlinePlayersWholeInventoryIntoEmc(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> withWorldRestored(helper, () -> {
+                    // Joining gives the starting tablet, which stays in the inventory: it is worth 0 EMC.
+                    ServerPlayer player = GameTests.joinedPlayer(helper, "converter");
+                    try {
+                        player.getInventory().add(new ItemStack(Items.DIAMOND, 5));
+                        player.getInventory().armor.set(3, new ItemStack(Items.GOLDEN_HELMET));
+                        player.getInventory().offhand.set(0, new ItemStack(Items.GOLD_INGOT));
+                        player.inventoryMenu.getCraftSlots().setItem(0, new ItemStack(Items.IRON_INGOT, 3));
+                        player.containerMenu.setCarried(new ItemStack(Items.DIAMOND));
+                        helper.assertTrue(player.getInventory().countItem(StartingItemsGameTests.tablet()) == 1,
+                                "The player should hold the starting tablet before the Prestige");
+                        BigInteger before = WorldEmc.balance(server);
+
+                        runPrestigeCommand(helper);
+
+                        // Diamond 8192, gold ingot 2048, iron ingot 256 (ProjectE defaults); golden helmet 1000 and
+                        // the tablet 0 (test pins).
+                        long expected = 5 * 8192L + 1000 + 2048 + 3 * 256 + 8192;
+                        BigInteger credit = WorldEmc.balance(server).subtract(before);
+                        helper.assertTrue(credit.equals(BigInteger.valueOf(expected)),
+                                "The whole inventory should be credited at full EMC (" + expected + "), got " + credit);
+                        assertHoldsOnlyOneTablet(helper, player);
+                        helper.assertTrue(player.inventoryMenu.getCraftSlots().isEmpty(), "The crafting grid should be wiped");
+                        helper.assertTrue(player.containerMenu.getCarried().isEmpty(), "The carried stack should be wiped");
+                    } finally {
+                        player.discard();
+                    }
+                }))
+                .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "prestige_convert_open_menu", timeoutTicks = 400)
+    public static void prestigeConvertsWhatAnOpenMenuWouldHandBack(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> withWorldRestored(helper, () -> {
+                    ServerPlayer player = GameTests.joinedPlayer(helper, "crafter");
+                    try {
+                        // A crafting table menu hands its grid back only with a real level and position.
+                        BlockPos table = helper.absolutePos(new BlockPos(2, 1, 2));
+                        helper.getLevel().setBlockAndUpdate(table, Blocks.CRAFTING_TABLE.defaultBlockState());
+                        player.openMenu(new SimpleMenuProvider((id, inventory, p) -> new CraftingMenu(id, inventory,
+                                ContainerLevelAccess.create(helper.getLevel(), table)), Component.literal("Crafting")));
+                        AbstractContainerMenu menu = player.containerMenu;
+                        helper.assertTrue(menu instanceof CraftingMenu, "A crafting table menu should be open, got " + menu);
+                        // Slot 0 is the result; 1 to 9 are the grid.
+                        menu.getSlot(1).set(new ItemStack(Items.IRON_INGOT, 2));
+                        menu.setCarried(new ItemStack(Items.GOLD_INGOT));
+                        BigInteger before = WorldEmc.balance(server);
+
+                        runPrestigeCommand(helper);
+
+                        // Two iron ingots at 256 and a gold ingot at 2048 (ProjectE defaults); the tablet is 0.
+                        BigInteger credit = WorldEmc.balance(server).subtract(before);
+                        helper.assertTrue(credit.equals(BigInteger.valueOf(2 * 256 + 2048)),
+                                "The open crafting grid and the cursor should be credited (2560), got " + credit);
+                        helper.assertTrue(player.containerMenu == player.inventoryMenu, "The menu should be closed");
+                        assertHoldsOnlyOneTablet(helper, player);
+                        helper.assertTrue(player.containerMenu.getCarried().isEmpty(), "The carried stack should be wiped");
+                    } finally {
+                        player.discard();
+                    }
                 }))
                 .thenSucceed();
     }

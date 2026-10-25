@@ -25,9 +25,10 @@ public final class Prestige {
     private Prestige() {}
 
     /**
-     * Runs a Prestige for the world: sweeps the current Run area into the world's EMC balance, wipes every player's
-     * inventory (crediting their ender chests, then emptying them) and gives them the starting items, starts a new Run area (border and world spawn move to it), snapshots it and teleports every player
-     * there. Knowledge is untouched, and the balance only grows by what the sweep credits.
+     * Runs a Prestige for the world: sweeps the current Run area into the world's EMC balance, converts every player's
+     * ender chest and inventory into EMC (crediting them, then emptying them) and gives them the starting items, starts
+     * a new Run area (border and world spawn move to it), snapshots it and teleports every player there. Knowledge is
+     * untouched, and the balance only grows by what the sweep and the conversion credit.
      *
      * @return the new Run area
      */
@@ -37,13 +38,13 @@ public final class Prestige {
         long sweptAt = System.nanoTime();
         List<ServerPlayer> players = players(server);
         for (ServerPlayer player : players) {
-            // The ender chest is converted to EMC (owner decision on #30); the inventory itself is only wiped.
+            // Owner decisions: ender chests on #30, online inventories on #57.
             credit.addAndClear(player.getEnderChestInventory());
-            wipeInventory(player);
+            convertInventory(player, credit);
             StartingItems.give(player);
         }
         credit.creditTo(server);
-        McIncrementalPrestige.LOGGER.info("Prestige: sweep and ender chests credited {} in {} ms", credit, (sweptAt - start) / 1_000_000);
+        McIncrementalPrestige.LOGGER.info("Prestige: sweep, inventories and ender chests credited {} in {} ms", credit, (sweptAt - start) / 1_000_000);
         return startRun(server, players);
     }
 
@@ -89,12 +90,23 @@ public final class Prestige {
         return players;
     }
 
-    /** Inventory, armour, offhand, the 2x2 crafting grid and the stack on the cursor. Not the ender chest. */
-    static void wipeInventory(ServerPlayer player) {
-        player.getInventory().clearContent();
-        player.inventoryMenu.getCraftSlots().clearContent();
-        player.containerMenu.setCarried(ItemStack.EMPTY);
+    /**
+     * Converts the player's inventory into EMC: adds everything they hold to {@code credit} at full value, then wipes
+     * it. Covers the main inventory, armour, offhand, the 2x2 crafting grid, the stack on the cursor and the input
+     * slots of an open menu (a crafting table's grid, an anvil's inputs), which the menu hands back on closing. Not the
+     * ender chest. The one place a player's inventory is credited, for a Prestige and for a missed one.
+     */
+    static void convertInventory(ServerPlayer player, EmcCredit credit) {
+        credit.addAndClear(player.getInventory());
+        if (player.containerMenu != player.inventoryMenu) {
+            // The inventory is empty now, so the menu has room to hand back its slots and the cursor instead of
+            // dropping them. Each menu knows which of its slots are the player's to take back.
+            player.closeContainer();
+            credit.addAndClear(player.getInventory());
+        }
+        credit.addAndClear(player.inventoryMenu.getCraftSlots());
+        credit.addItem(player.inventoryMenu.getCarried());
         player.inventoryMenu.setCarried(ItemStack.EMPTY);
-        player.containerMenu.broadcastChanges();
+        player.inventoryMenu.broadcastChanges();
     }
 }

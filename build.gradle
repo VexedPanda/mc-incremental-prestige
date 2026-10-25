@@ -256,3 +256,13 @@ idea {
 tasks.named('test', Test).configure {
     failOnNoDiscoveredTests = false
 }
+
+// ProjectE values the Transmutation Tablet at 0 only through its config file (datapack values must be positive), as the
+// Pack does: install the GameTest copy into the run directory before the GameTests start.
+def prepareGameTestConfig = tasks.register('prepareGameTestConfig', Copy) {
+    from 'src/test/config'
+    into 'run/config'
+}
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn prepareGameTestConfig
+}
