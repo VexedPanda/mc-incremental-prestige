@@ -1,18 +1,13 @@
 package io.github.vexedpanda.mcincremental.prestige.controller;
 
-import java.math.BigInteger;
-
 import com.mojang.serialization.Codec;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
-import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
 import io.github.vexedpanda.mcincremental.prestige.run.StartingItems;
-import moze_intel.projecte.api.proxy.IEMCProxy;
+import io.github.vexedpanda.mcincremental.prestige.sweep.Refund;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.server.TickTask;
 import net.neoforged.bus.api.EventPriority;
@@ -73,8 +68,10 @@ public final class MissedPrestige {
     }
 
     private static void catchUp(ServerPlayer player, RunArea area) {
-        BigInteger refund = refundAndClear(player.getInventory()).add(refundAndClear(player.getEnderChestInventory()));
-        WorldEmc.addEmc(player.getServer(), refund);
+        Refund refund = new Refund();
+        refund.addAndClear(player.getInventory());
+        refund.addAndClear(player.getEnderChestInventory());
+        refund.credit(player.getServer());
         Prestige.wipeInventory(player);
         StartingItems.give(player);
         if (player.level().dimension() == Level.OVERWORLD) {
@@ -86,20 +83,7 @@ public final class MissedPrestige {
                 if (!player.isRemoved()) RunAreas.teleport(player, area);
             }));
         }
-        McIncrementalPrestige.LOGGER.info("{} missed a Prestige: refunded {} EMC and moved to the Run area around {}",
+        McIncrementalPrestige.LOGGER.info("{} missed a Prestige: refunded {} and moved to the Run area around {}",
                 player.getScoreboardName(), refund, area.centre());
-    }
-
-    /** Empties the container and returns the full EMC value of what it held. */
-    private static BigInteger refundAndClear(Container container) {
-        BigInteger total = BigInteger.ZERO;
-        for (int i = 0; i < container.getContainerSize(); i++) {
-            ItemStack stack = container.getItem(i);
-            if (!stack.isEmpty()) {
-                total = total.add(BigInteger.valueOf(IEMCProxy.INSTANCE.getValue(stack)).multiply(BigInteger.valueOf(stack.getCount())));
-            }
-        }
-        container.clearContent();
-        return total;
     }
 }

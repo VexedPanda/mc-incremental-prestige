@@ -2,7 +2,9 @@ package io.github.vexedpanda.mcincremental.prestige.sweep;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.annotation.Nullable;
 
@@ -34,6 +36,7 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.material.FluidState;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.items.IItemHandler;
 
 /**
@@ -50,69 +53,89 @@ public final class PrestigeSweep {
 
     /**
      * Sweeps the Run area the world's snapshot is of, then discards the snapshot, so a Run is swept at most once. Does
-     * nothing when there is no snapshot. Doesn't credit anything: the caller credits the returned EMC to the world.
+     * nothing when there is no snapshot. Doesn't credit anything: the caller credits the returned {@link Refund}.
      *
      * <p>Runs in phases, each finishing before the next starts, so a multiblock is refunded whole: nothing is removed
      * (which could drop, void or break-trigger a neighbour's contents) until every inventory has been drained.
      * <ol>
      *   <li>collect: every position whose Block differs from the snapshot;
-     *   <li>drain: every block entity's item and fluid handlers in the swept area (#30);
-     *   <li>value: every changed position with EMC, a block entity or a fluid source;
+     *   <li>drain: every block entity's item and fluid handlers in the swept area, changed or not, and the handlers of
+     *       changed blocks with no block entity (a lava cauldron);
+     *   <li>value: every changed position with EMC, a block entity or a fluid source with EMC;
      *   <li>remove: those positions, with no drops and no neighbour updates;
      *   <li>fluid sources: changed positions still holding a valued fluid source (e.g. leaked into the margin);
      *   <li>entities: dropped items, and value-holding entities that weren't there at Run start.
      * </ol>
      *
-     * @return the EMC value of everything swept
+     * @return the EMC value of everything swept, items and fluids
      */
-    public static BigInteger sweep(MinecraftServer server) {
+    public static Refund sweep(MinecraftServer server) {
+        Refund refund = new Refund();
         RunSnapshotData snapshot = RunSnapshotData.get(server);
         RunArea area = snapshot.area;
-        if (area == null) return BigInteger.ZERO;
+        if (area == null) return refund;
         ServerLevel level = server.overworld();
 
         List<BlockPos> changed = changedPositions(level, snapshot, area);
-        BigInteger total = drainBlockEntities(level, area);
+        Set<BlockPos> changedSet = new HashSet<>(changed);
+        for (BlockEntity blockEntity : blockEntities(level, snapshot, area)) {
+            BlockPos pos = blockEntity.getBlockPos();
+            SweptContents.drain(level, pos, blockEntity, changedSet.contains(pos), refund);
+        }
+        for (BlockPos pos : changed) {
+            if (level.getBlockEntity(pos) == null) SweptContents.drain(level, pos, null, true, refund);
+        }
         List<BlockPos> swept = new ArrayList<>();
         for (BlockPos pos : changed) {
             BlockState state = level.getBlockState(pos);
             BlockEntity blockEntity = level.getBlockEntity(pos);
             long value = value(level, pos, state, blockEntity);
-            // Fluid sources are valued here too (#30).
-            if (value <= 0 && blockEntity == null) continue;
-            total = total.add(BigInteger.valueOf(value));
+            FluidState fluid = state.getFluidState();
+            boolean valuedSource = fluid.isSource() && FluidEmc.hasValue(fluid.getType());
+            if (value <= 0 && blockEntity == null && !valuedSource) continue;
+            refund.addEmc(value);
+            if (valuedSource) refund.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
             swept.add(pos);
         }
         for (BlockPos pos : swept) remove(level, pos);
-        total = total.add(sweepFluidSources(level, changed));
-        total = total.add(sweepEntities(level, snapshot, area));
+        sweepFluidSources(level, changed, refund);
+        refund.addEmc(sweepEntities(level, snapshot, area));
         snapshot.clear();
-        return total;
+        return refund;
     }
 
-    /**
-     * Drains every block entity in the swept area, changed or not, before any block is removed. Returns the EMC
-     * drained. Not yet implemented (#30): it must skip unrolled loot containers and the EMC barrel's handlers
-     * (docs/emc-barrel.md). Until then contents are lost with their block.
-     */
-    private static BigInteger drainBlockEntities(ServerLevel level, RunArea area) {
-        return BigInteger.ZERO;
+    /** Every block entity in the swept chunks, in any order; a copy, so removing them while iterating is safe. */
+    private static List<BlockEntity> blockEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
+        List<BlockEntity> found = new ArrayList<>();
+        int radius = sweptRadius(snapshot, area);
+        ChunkPos centre = area.centre();
+        for (int cx = centre.x - radius; cx <= centre.x + radius; cx++) {
+            for (int cz = centre.z - radius; cz <= centre.z + radius; cz++) {
+                if (!snapshot.chunks.containsKey(ChunkPos.asLong(cx, cz))) continue;
+                found.addAll(level.getChunk(cx, cz).getBlockEntities().values());
+            }
+        }
+        return found;
+    }
+
+    private static int sweptRadius(RunSnapshotData snapshot, RunArea area) {
+        return area.radiusChunks() + snapshot.marginChunks;
     }
 
     /**
      * Refunds and removes the changed positions still holding a fluid source with an EMC value ({@link FluidEmc}), such
      * as lava leaked into the margin. Runs after the remove phase, reading the live world, so a position an earlier
-     * phase already swept (now air) is never credited twice. A source block is 1000 mB: its value is whole EMC.
+     * phase already swept (now air) is never credited twice. The value phase already takes every changed valued source
+     * it sees, so this only catches a source that appeared since (a neighbour's removal can't create one: removal sends
+     * no updates). A source block is 1000 mB.
      */
-    private static BigInteger sweepFluidSources(ServerLevel level, List<BlockPos> changed) {
-        BigInteger total = BigInteger.ZERO;
+    private static void sweepFluidSources(ServerLevel level, List<BlockPos> changed, Refund refund) {
         for (BlockPos pos : changed) {
             FluidState fluid = level.getFluidState(pos);
             if (!fluid.isSource() || !FluidEmc.hasValue(fluid.getType())) continue;
-            total = total.add(BigInteger.valueOf(FluidEmc.valuePerBucket(fluid.getType())));
+            refund.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
             remove(level, pos);
         }
-        return total;
     }
 
     /**
@@ -193,7 +216,7 @@ public final class PrestigeSweep {
     /** Every non-air position whose Block differs from the snapshot's, in the swept chunks. */
     private static List<BlockPos> changedPositions(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
         List<BlockPos> changed = new ArrayList<>();
-        int radius = area.radiusChunks() + snapshot.marginChunks;
+        int radius = sweptRadius(snapshot, area);
         ChunkPos centre = area.centre();
         for (int cx = centre.x - radius; cx <= centre.x + radius; cx++) {
             for (int cz = centre.z - radius; cz <= centre.z + radius; cz++) {
