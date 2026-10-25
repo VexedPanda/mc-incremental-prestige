@@ -214,7 +214,7 @@ public class PrestigeGameTests {
             runPrestigeCommand(helper);
 
             BigInteger after = WorldEmc.balance(server);
-            // Until the Prestige sweep lands (#29) nothing is gained; afterwards the gain is whatever it swept.
+            // The gain is whatever the Prestige sweep credited.
             List<String> expected = List.of(after.subtract(before).toString(), after.toString());
             for (List<Component> messages : List.of(aMessages, bMessages)) {
                 Object[] args = args(messages, SUMMARY_KEY);
