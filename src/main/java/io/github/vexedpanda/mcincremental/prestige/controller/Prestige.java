@@ -2,6 +2,7 @@ package io.github.vexedpanda.mcincremental.prestige.controller;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
@@ -28,6 +29,25 @@ public final class Prestige {
         // Prestige sweep of the old Run area goes here, before anything moves (#29).
         List<ServerPlayer> players = players(server);
         for (ServerPlayer player : players) wipeInventory(player);
+        return startRun(server, players);
+    }
+
+    /**
+     * Starts the world's first Run if it has none yet: a new Run area, as after a Prestige, but with no sweep and no
+     * inventory wipe. Does nothing for a world that already has a Run.
+     *
+     * @return the first Run area, or empty if the world already had a Run
+     */
+    public static Optional<RunArea> startFirstRun(MinecraftServer server) {
+        if (RunAreas.current(server).isPresent()) return Optional.empty();
+        return Optional.of(startRun(server, players(server)));
+    }
+
+    /**
+     * Starts a new Run: the single place a Run begins, for a Prestige and for the world's first Run. Chooses a new Run
+     * area (border and world spawn move to it) and teleports the players there.
+     */
+    private static RunArea startRun(MinecraftServer server, List<ServerPlayer> players) {
         RunArea area = RunAreas.beginRun(server);
         // Run snapshot of the new area goes here, before players arrive (#29).
         for (ServerPlayer player : players) RunAreas.teleport(player, area);
