@@ -27,7 +27,19 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    // ProjectE has no reachable Maven repo for 1.21.1, so fetch the release jar from CurseForge's CDN.
+    // Coordinates map to https://mediafilez.forgecdn.net/files/<group>/<module>/<revision>.jar
+    exclusiveContent {
+        forRepository {
+            ivy {
+                name = 'CurseForge CDN'
+                url = 'https://mediafilez.forgecdn.net/files/'
+                patternLayout { artifact '[organisation]/[module]/[revision].[ext]' }
+                metadataSources { artifact() }
+            }
+        }
+        filter { includeGroup '6611' }
+    }
 }
 
 base {
@@ -116,6 +128,11 @@ configurations {
 }
 
 dependencies {
+    // ProjectE PE1.1.0 (CurseForge file 6611984). Compile against it and load it in dev runs and GameTests,
+    // but don't publish it: the pack ships ProjectE itself, and neoforge.mods.toml declares it required.
+    compileOnly  '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
+    localRuntime '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"

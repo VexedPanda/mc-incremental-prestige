@@ -22,7 +22,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build
-        run: ./gradlew build
+        run: ./gradlew build --console=plain
+
+      # Runs every @GameTest headless; the server exits non-zero when a required test fails.
+      - name: GameTests
+        run: ./gradlew runGameTestServer --console=plain
 
       - uses: actions/upload-artifact@v4
         with:
