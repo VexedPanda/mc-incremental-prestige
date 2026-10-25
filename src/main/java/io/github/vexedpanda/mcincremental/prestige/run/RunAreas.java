@@ -54,6 +54,17 @@ public final class RunAreas {
     }
 
     /**
+     * Replaces the record of every Run area the world has used. For GameTests, which empty it to act on a world with
+     * no Run yet and put it back afterwards; moves nothing.
+     */
+    public static void replaceVisited(MinecraftServer server, List<RunArea> visited) {
+        RunAreaData data = RunAreaData.get(server);
+        data.visited.clear();
+        data.visited.addAll(visited);
+        data.setDirty();
+    }
+
+    /**
      * Starts a new Run area: chooses one far from every earlier area and, if {@link RunAreaConfig#AVOID_OCEANS} is on,
      * not centred in an ocean; records it as current, fits the world border to it and moves the world spawn to its
      * safe spawn point. Doesn't move any player: call {@link #teleport} for each.
