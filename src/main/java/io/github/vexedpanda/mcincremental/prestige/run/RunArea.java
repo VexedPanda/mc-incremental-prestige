@@ -59,11 +59,6 @@ public record RunArea(ChunkPos centre, int radiusChunks) {
         return Math.abs(chunk.x - centre.x) <= r && Math.abs(chunk.z - centre.z) <= r;
     }
 
-    /** Whether the Prestige sweep covers the chunk: the area plus {@link RunAreaConfig#SWEEP_MARGIN_CHUNKS} around it. */
-    public boolean inSweep(ChunkPos chunk) {
-        return containsChunk(chunk, RunAreaConfig.SWEEP_MARGIN_CHUNKS.get());
-    }
-
     /** Chebyshev distance between the two areas' centre chunks. */
     public int distanceChunks(RunArea other) {
         return Math.max(Math.abs(centre.x - other.centre.x), Math.abs(centre.z - other.centre.z));

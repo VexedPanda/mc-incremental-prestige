@@ -1,5 +1,6 @@
 package io.github.vexedpanda.mcincremental.prestige.gametest;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.mojang.authlib.GameProfile;
@@ -8,6 +9,7 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.Connection;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -50,11 +52,30 @@ public final class GameTests {
      * {@code makeMockServerPlayerInLevel} can't be used: ProjectE's datapack-sync handler throws for it.
      */
     public static ServerPlayer newPlayer(GameTestHelper helper, String name) {
+        return newPlayer(helper, name, null);
+    }
+
+    /**
+     * {@link #joinedPlayer} whose chat and action-bar messages (everything sent through {@code sendSystemMessage},
+     * including {@code displayClientMessage}) are added to {@code messages} instead of being sent.
+     */
+    public static ServerPlayer joinedRecordingPlayer(GameTestHelper helper, String name, List<Component> messages) {
+        return join(helper, newPlayer(helper, name, messages));
+    }
+
+    private static ServerPlayer newPlayer(GameTestHelper helper, String name, List<Component> messages) {
         ServerLevel level = helper.getLevel();
         MinecraftServer server = level.getServer();
         GameProfile profile = new GameProfile(UUID.randomUUID(), name);
         CommonListenerCookie cookie = CommonListenerCookie.createInitial(profile, false);
-        ServerPlayer player = new ServerPlayer(server, level, profile, cookie.clientInformation());
+        ServerPlayer player = messages == null
+                ? new ServerPlayer(server, level, profile, cookie.clientInformation())
+                : new ServerPlayer(server, level, profile, cookie.clientInformation()) {
+                    @Override
+                    public void sendSystemMessage(Component message, boolean overlay) {
+                        messages.add(message);
+                    }
+                };
         Connection connection = new Connection(PacketFlow.SERVERBOUND);
         new EmbeddedChannel(connection);
         player.connection = new ServerGamePacketListenerImpl(server, connection, player, cookie);

@@ -4,6 +4,7 @@ import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreaConfig;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
+import io.github.vexedpanda.mcincremental.prestige.sweep.RunSnapshots;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -80,18 +81,18 @@ public class RunAreaGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "run_area_margin")
-    public static void sweepMarginConfigSetsHowFarTheSweepReaches(GameTestHelper helper) {
-        RunArea area = new RunArea(new ChunkPos(30, -60), 1);
-        ChunkPos twoOut = new ChunkPos(32, -60), threeOut = new ChunkPos(30, -57);
-        withConfig(RunAreaConfig.SWEEP_MARGIN_CHUNKS, 1, () -> {
-            helper.assertTrue(area.inSweep(twoOut), "Margin 1 should sweep the chunk next to a 3x3 area");
-            helper.assertFalse(area.inSweep(threeOut), "Margin 1 should not sweep 2 chunks past a 3x3 area");
-        });
-        withConfig(RunAreaConfig.SWEEP_MARGIN_CHUNKS, 2, () -> {
-            helper.assertTrue(area.inSweep(threeOut), "Margin 2 should sweep 2 chunks past a 3x3 area");
-            helper.assertFalse(area.inSweep(new ChunkPos(34, -60)), "Margin 2 should not sweep 3 chunks past a 3x3 area");
-        });
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "run_area_margin", timeoutTicks = 400)
+    public static void sweepMarginConfigSetsHowFarTheRunSnapshotReaches(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        PrestigeGameTests.withWorldRestored(helper, () -> withConfig(RunAreaConfig.SWEEP_MARGIN_CHUNKS, 2, () -> {
+            PrestigeGameTests.runPrestigeCommand(helper);
+            ChunkPos c = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area")).centre();
+            // A 3x3 area with margin 2 is snapshotted (and so sweepable) 7x7: up to 3 chunks from the centre.
+            helper.assertTrue(RunSnapshots.covers(server, new ChunkPos(c.x + 3, c.z - 3)),
+                    "Margin 2 should cover the chunk 2 past the area's corner");
+            helper.assertFalse(RunSnapshots.covers(server, new ChunkPos(c.x - 4, c.z)),
+                    "Margin 2 should not cover the chunk 3 past the area's edge");
+        }));
         helper.succeed();
     }
 

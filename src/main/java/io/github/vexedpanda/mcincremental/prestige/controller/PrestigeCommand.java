@@ -23,7 +23,7 @@ public final class PrestigeCommand {
                 .requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .executes(context -> {
                     CommandSourceStack source = context.getSource();
-                    Prestige.run(source.getServer());
+                    PrestigeSummary.runAndAnnounce(source.getServer());
                     source.sendSuccess(() -> Component.translatable("commands.mcincremental_prestige.prestige.success"), true);
                     return 1;
                 }));

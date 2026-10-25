@@ -45,7 +45,7 @@ public final class EmcBarrels {
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         // Same handler on every side, and for a null side (a block-wide query).
         event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, BLOCK_ENTITY.get(), (barrel, side) -> barrel.itemHandler());
-        // Extension point (#36): register Capabilities.FluidHandler.BLOCK here with a fluid handler beside the item one.
+        event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, BLOCK_ENTITY.get(), (barrel, side) -> barrel.fluidHandler());
     }
 
     private static void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
