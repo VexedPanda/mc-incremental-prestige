@@ -161,7 +161,7 @@ public class PrestigeGameTests {
     }
 
     /** Runs {@code /prestige} as the server console. */
-    private static void runPrestigeCommand(GameTestHelper helper) {
+    static void runPrestigeCommand(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "prestige");
     }
@@ -170,7 +170,7 @@ public class PrestigeGameTests {
      * A Prestige moves the world border and world spawn, which are shared by every test and persist in the test world
      * between runs: put them back whatever happens.
      */
-    private static void withWorldRestored(GameTestHelper helper, Runnable body) {
+    static void withWorldRestored(GameTestHelper helper, Runnable body) {
         ServerLevel level = helper.getLevel().getServer().overworld();
         WorldBorder border = level.getWorldBorder();
         double x = border.getCenterX(), z = border.getCenterZ(), size = border.getSize();

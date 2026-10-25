@@ -6,10 +6,12 @@ import com.mojang.logging.LogUtils;
 
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrels;
 import io.github.vexedpanda.mcincremental.prestige.controller.PrestigeItems;
+import io.github.vexedpanda.mcincremental.prestige.run.RunAreaConfig;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 
 @Mod(McIncrementalPrestige.MODID)
 public class McIncrementalPrestige {
@@ -19,6 +21,7 @@ public class McIncrementalPrestige {
     public McIncrementalPrestige(IEventBus modEventBus, ModContainer modContainer) {
         EmcBarrels.register(modEventBus);
         PrestigeItems.register(modEventBus);
+        modContainer.registerConfig(ModConfig.Type.SERVER, RunAreaConfig.SPEC);
         LOGGER.info("Mc-incremental Prestige loaded");
     }
 }
