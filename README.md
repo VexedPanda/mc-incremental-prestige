@@ -7,7 +7,7 @@ NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-
 ## Features
 
 - **Run areas:** each Run is a 3×3-chunk area (configurable) held in by the vanilla world border. Areas are far apart, never centred on an ocean, and give a safe spawn. The first Run starts when the world is created.
-- **Prestige:** start it with the Prestige item (sneak-use, then confirm within 5 s) or `/prestige` (op). The Prestige sweep converts everything players added to the area, at full EMC, then the players move to a new area:
+- **Prestige:** start it with the Prestige item (crafted from one dirt, sand or cobblestone; use it, then sneak-use it within 5 s to confirm) or `/prestige` (op). The Prestige sweep converts everything players added to the area, at full EMC, then the players move to a new area:
   - blocks, including multiblocks;
   - machine, chest and tank contents, drained before any block is removed;
   - placed fluids, dropped items, minecarts and item frames;
