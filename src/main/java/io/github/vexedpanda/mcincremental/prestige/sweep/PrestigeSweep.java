@@ -6,12 +6,15 @@ import java.util.List;
 
 import javax.annotation.Nullable;
 
+import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -21,6 +24,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.material.FluidState;
 
 /**
  * The Prestige sweep (ADR-0007, mod {@code docs/prestige-sweep.md}): diffs the Run area against the world's Run
@@ -30,10 +34,10 @@ import net.minecraft.world.level.chunk.PalettedContainer;
  */
 public final class PrestigeSweep {
     /**
-     * Chunks swept around the Run area, on every side. The snapshot already covers {@link RunSnapshots#MARGIN_CHUNKS};
-     * sweeping the margin is #31.
+     * Chunks swept around the Run area, on every side (as far as the snapshot covers, {@link RunSnapshots#MARGIN_CHUNKS}):
+     * fluids, explosions and thrown items reach past the world border.
      */
-    static final int MARGIN_CHUNKS = 0;
+    static final int MARGIN_CHUNKS = 1;
 
     /** No neighbour updates (no cascades, no popping attached blocks) and no drops. */
     private static final int REMOVE_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS;
@@ -75,7 +79,8 @@ public final class PrestigeSweep {
             swept.add(pos);
         }
         for (BlockPos pos : swept) remove(level, pos);
-        // Entities are swept here (#31).
+        total = total.add(sweepFluidSources(level, changed));
+        total = total.add(sweepEntities(level, snapshot, area));
         snapshot.clear();
         return total;
     }
@@ -87,6 +92,43 @@ public final class PrestigeSweep {
      */
     private static BigInteger drainBlockEntities(ServerLevel level, RunArea area) {
         return BigInteger.ZERO;
+    }
+
+    /**
+     * Refunds and removes the changed positions still holding a fluid source with an EMC value ({@link FluidEmc}), such
+     * as lava leaked into the margin. Runs after the remove phase, reading the live world, so a position an earlier
+     * phase already swept (now air) is never credited twice. A source block is 1000 mB: its value is whole EMC.
+     */
+    private static BigInteger sweepFluidSources(ServerLevel level, List<BlockPos> changed) {
+        BigInteger total = BigInteger.ZERO;
+        for (BlockPos pos : changed) {
+            FluidState fluid = level.getFluidState(pos);
+            if (!fluid.isSource() || !FluidEmc.hasValue(fluid.getType())) continue;
+            total = total.add(BigInteger.valueOf(FluidEmc.valuePerBucket(fluid.getType())));
+            remove(level, pos);
+        }
+        return total;
+    }
+
+    /**
+     * Refunds and removes entities in the swept chunks (entities phase, #31): every dropped item, whenever it appeared.
+     * Returns the EMC refunded.
+     */
+    private static BigInteger sweepEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
+        int radius = RunArea.RADIUS_CHUNKS + Math.min(MARGIN_CHUNKS, snapshot.marginChunks);
+        ChunkPos centre = area.centre();
+        List<Entity> inBox = new ArrayList<>();
+        for (Entity entity : level.getAllEntities()) {
+            ChunkPos c = entity.chunkPosition();
+            if (Math.abs(c.x - centre.x) <= radius && Math.abs(c.z - centre.z) <= radius) inBox.add(entity);
+        }
+        BigInteger total = BigInteger.ZERO;
+        for (Entity entity : inBox) {
+            if (entity.isRemoved() || !(entity instanceof ItemEntity item)) continue;
+            total = total.add(BigInteger.valueOf(emc(item.getItem())));
+            item.discard();
+        }
+        return total;
     }
 
     /**

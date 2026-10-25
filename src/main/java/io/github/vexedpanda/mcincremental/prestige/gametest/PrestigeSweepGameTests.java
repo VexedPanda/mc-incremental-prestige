@@ -17,6 +17,7 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -180,6 +181,49 @@ public class PrestigeSweepGameTests {
                     assertCredited(helper, before, barrelEmc);
                 }))
                 .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_dropped_item", timeoutTicks = 400)
+    public static void droppedItemIsRefundedAndRemoved(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> PrestigeGameTests.withWorldRestored(helper, () -> {
+                    BlockPos pos = surface(helper, startRun(helper));
+                    ServerLevel level = level(helper);
+                    ItemEntity dropped = new ItemEntity(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5,
+                            new ItemStack(Items.DIAMOND, 3));
+                    helper.assertTrue(level.addFreshEntity(dropped), "The dropped diamonds should spawn");
+                    BigInteger before = WorldEmc.balance(server);
+
+                    PrestigeGameTests.runPrestigeCommand(helper);
+
+                    helper.assertTrue(dropped.isRemoved(), "The dropped diamonds should be swept");
+                    // ProjectE's default value for a diamond: 8192.
+                    assertCredited(helper, before, 3 * 8192);
+                }))
+                .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_margin_fluid", timeoutTicks = 400)
+    public static void fluidLeakedIntoTheMarginIsRefunded(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        PrestigeGameTests.withWorldRestored(helper, () -> {
+            // Two chunks east of the Run area's middle: past the border, in the one-chunk margin.
+            BlockPos leaked = surface(helper, startRun(helper)).east(32);
+            ServerLevel level = level(helper);
+            level.setBlockAndUpdate(leaked, Blocks.LAVA.defaultBlockState());
+            BigInteger before = WorldEmc.balance(server);
+
+            PrestigeGameTests.runPrestigeCommand(helper);
+
+            helper.assertTrue(level.getBlockState(leaked).isAir(),
+                    "The lava source leaked into the margin should be swept, found " + level.getBlockState(leaked));
+            // The GameTest datapack values lava at 1500 per 1000 mB, and a source block is 1000 mB.
+            assertCredited(helper, before, 1500);
+        });
+        helper.succeed();
     }
 
     /** Prestiges to start a Run in a new Run area and returns it. */
