@@ -1,1 +1,4 @@
-{}
+{
+  "item.mcincremental_prestige.prestige": "Prestige",
+  "commands.mcincremental_prestige.prestige.success": "Prestiged: a new Run has started"
+}
