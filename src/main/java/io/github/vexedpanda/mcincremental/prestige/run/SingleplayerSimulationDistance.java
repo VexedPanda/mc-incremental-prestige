@@ -28,7 +28,7 @@ public final class SingleplayerSimulationDistance {
         MinecraftServer server = event.getServer();
         if (!server.isSingleplayer()) return;
         int cap = RunAreas.current(server).map(RunArea::simulationDistanceChunks)
-                .orElseGet(() -> 2 * RunAreaConfig.RADIUS_CHUNKS.get());
+                .orElseGet(() -> RunArea.simulationDistanceChunks(RunAreaConfig.RADIUS_CHUNKS.get()));
         PlayerList players = server.getPlayerList();
         // Only when above the cap: setting it broadcasts to every player and updates every level.
         if (players.getSimulationDistance() > cap) {
