@@ -14,6 +14,14 @@ public record RunArea(ChunkPos centre, int radiusChunks) {
         return 2 * radiusChunks + 1;
     }
 
+    /**
+     * The smallest simulation distance that keeps the whole area ticking wherever in it the player stands: from a
+     * corner chunk, the far edge is {@code 2 * radiusChunks} chunks away (2 for a 3x3 area).
+     */
+    public int simulationDistanceChunks() {
+        return 2 * radiusChunks;
+    }
+
     /** Side length in blocks: the world border's size. */
     public int sizeBlocks() {
         return 16 * sizeChunks();
