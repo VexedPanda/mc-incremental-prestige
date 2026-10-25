@@ -43,6 +43,14 @@ public final class RunAreas {
         return visited.isEmpty() ? Optional.empty() : Optional.of(visited.getLast());
     }
 
+    /**
+     * The world's Run number: how many Runs it has started, so 0 before the first Run. Each Run start adds one Run
+     * area to the record, so the record's length is the counter.
+     */
+    public static int runNumber(MinecraftServer server) {
+        return RunAreaData.get(server).visited.size();
+    }
+
     /** Every Run area the world has used, oldest first, including the current one. */
     public static List<RunArea> visited(MinecraftServer server) {
         return List.copyOf(RunAreaData.get(server).visited);
