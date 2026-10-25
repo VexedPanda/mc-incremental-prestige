@@ -1,1 +1,7 @@
-{}
+{
+  "block.mcincremental_prestige.emc_barrel": "EMC Barrel",
+  "block.mcincremental_prestige.emc_barrel.configured": "EMC barrel now hands out %s",
+  "block.mcincremental_prestige.emc_barrel.not_learned": "%s isn't learned (or has no EMC), so the barrel can't hand it out",
+  "block.mcincremental_prestige.emc_barrel.unconfigured": "EMC barrel: right-click with a learned item to choose what it hands out",
+  "block.mcincremental_prestige.emc_barrel.shows": "EMC barrel hands out %s"
+}
