@@ -115,6 +115,8 @@ neoForge {
         // multi mod projects should define one per mod
         "${mod_id}" {
             sourceSet(sourceSets.main)
+            // GameTest-only data (src/test/resources, e.g. fluid EMC test values): loaded in dev runs, never in the jar.
+            sourceSet(sourceSets.test)
         }
     }
 }
