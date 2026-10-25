@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "mcincremental_prestige:block/emc_barrel" }
+  }
+}

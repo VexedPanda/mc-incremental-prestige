@@ -27,7 +27,19 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    // ProjectE has no reachable Maven repo for 1.21.1, so fetch the release jar from CurseForge's CDN.
+    // Coordinates map to https://mediafilez.forgecdn.net/files/<group>/<module>/<revision>.jar
+    exclusiveContent {
+        forRepository {
+            ivy {
+                name = 'CurseForge CDN'
+                url = 'https://mediafilez.forgecdn.net/files/'
+                patternLayout { artifact '[organisation]/[module]/[revision].[ext]' }
+                metadataSources { artifact() }
+            }
+        }
+        filter { includeGroup '6611' }
+    }
 }
 
 base {
@@ -70,6 +82,8 @@ neoForge {
         gameTestServer {
             type = "gameTestServer"
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // A first Run would move the world border and spawn under every test; FirstRunGameTests start it explicitly.
+            systemProperty 'mcincremental_prestige.firstRunOnStart', 'false'
         }
 
         data {
@@ -97,12 +111,17 @@ neoForge {
         }
     }
 
+    // GameTests that need GregTech's API (src/test/java) compile against Minecraft and NeoForge too.
+    addModdingDependenciesTo(sourceSets.test)
+
     mods {
         // define mod <-> source bindings
         // these are used to tell the game which sources are for which mod
         // multi mod projects should define one per mod
         "${mod_id}" {
             sourceSet(sourceSets.main)
+            // GameTest-only data (src/test/resources, e.g. fluid EMC test values): loaded in dev runs, never in the jar.
+            sourceSet(sourceSets.test)
         }
     }
 }
@@ -115,7 +134,51 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// GregTech CEu Modern, pinned: the exact jar the Pack ships, mirrored as a release asset of the pack repo. Fetched with a
+// plain GET (and checked against its SHA-256) rather than through a Gradle repository: GitHub redirects release assets to
+// presigned storage URLs that refuse the HEAD request Gradle's artifact-only repositories send.
+def gregtechUrl = 'https://github.com/VexedPanda/Mc-incremental/releases/download/gtceu-1.21.1-8.0.0-SNAPSHOT%2B20261025-071601-8602baa-202610251526/gtceu-1.21.1-8.0.0-SNAPSHOT%2B20261025-071601-8602baa.jar'
+def gregtechSha256 = '32c9e5f294a8f9adf80d9768ce5b485b613f6149b06134d1e5e157cceb83ce16'
+def gregtechJar = layout.buildDirectory.file('gregtech/gtceu-1.21.1-8.0.0-SNAPSHOT+20261025-071601-8602baa.jar')
+def downloadGregtech = tasks.register('downloadGregtech') {
+    inputs.property('url', gregtechUrl)
+    inputs.property('sha256', gregtechSha256)
+    outputs.file(gregtechJar)
+    def url = gregtechUrl
+    def sha256 = gregtechSha256
+    def jar = gregtechJar
+    doLast {
+        File file = jar.get().asFile
+        file.parentFile.mkdirs()
+        File part = new File(file.path + '.part')
+        new URI(url).toURL().withInputStream { input -> part.withOutputStream { it << input } }
+        String actual = java.security.MessageDigest.getInstance('SHA-256').digest(part.bytes).encodeHex().toString()
+        if (actual != sha256) {
+            part.delete()
+            throw new GradleException("GregTech jar from ${url} has SHA-256 ${actual}, expected ${sha256}")
+        }
+        java.nio.file.Files.move(part.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+def gregtech = files(gregtechJar).builtBy(downloadGregtech)
+
 dependencies {
+    // ProjectE PE1.1.0 (CurseForge file 6611984). Compile against it and load it in dev runs and GameTests,
+    // but don't publish it: the pack ships ProjectE itself, and neoforge.mods.toml declares it required.
+    compileOnly  '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
+    localRuntime '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
+
+    // GregTech (the Pack's pinned build). The sweep must credit GT machines and multiblocks, and the GT GameTests
+    // (src/test/java) form real GT structures. The mod compiles against GT only for its GT recipe EMC mapper
+    // (emc/gt), which ProjectE loads only when gtceu is installed, and for the inputs of a GT recipe in progress
+    // (sweep/gt), called only when gtceu is loaded, so the mod still runs without GT; GT is loaded in
+    // dev runs (localRuntime is not published). GT's own dependencies (Configuration, Registrate, ModularUI) are
+    // jar-in-jars of this jar.
+    compileOnly      gregtech
+    localRuntime     gregtech
+    testCompileOnly  gregtech
+    testCompileOnly  '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
@@ -187,4 +250,19 @@ idea {
         downloadSources = true
         downloadJavadoc = true
     }
+}
+
+// src/test/java holds GameTests (run by runGameTestServer), not JUnit tests.
+tasks.named('test', Test).configure {
+    failOnNoDiscoveredTests = false
+}
+
+// ProjectE values the Transmutation Tablet at 0 only through its config file (datapack values must be positive), as the
+// Pack does: install the GameTest copy into the run directory before the GameTests start.
+def prepareGameTestConfig = tasks.register('prepareGameTestConfig', Copy) {
+    from 'src/test/config'
+    into 'run/config'
+}
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn prepareGameTestConfig
 }

@@ -1,6 +1,6 @@
 # Mc-incremental Prestige
 
-NeoForge 1.21.1 mod for the [Mc-incremental](https://github.com/VexedPanda/Mc-incremental) modpack: the Prestige controller (change tracking, Prestige sweep, new Run area, world border, teleport, inventory wipe) and the EMC tank.
+NeoForge 1.21.1 mod for the [Mc-incremental](https://github.com/VexedPanda/Mc-incremental) modpack: the Prestige controller (change tracking, Prestige sweep, new Run area, world border, teleport, inventory wipe) and the EMC barrel.
 
 Design, vocabulary and decisions live in the pack repo: read its `GLOSSARY.md`, `docs/adr/` and `docs/pocs/poc-1.md` before changing behaviour, and use the glossary's terms in code and docs. This repo exists because of the pack's ADR-0003 (one repo per custom mod).
 
@@ -10,7 +10,7 @@ Design, vocabulary and decisions live in the pack repo: read its `GLOSSARY.md`, 
 
 ## Releases
 
-Pushing a `v*` tag builds the jar and attaches it to a GitHub release; the pack consumes it from there.
+Run the manual `Release` workflow (inputs: `version`, e.g. `v0.2.0`, and `ref`); it tags the ref, builds the jar and attaches it to a GitHub release, which the pack consumes. Cloud sessions can't push tags or create releases directly.
 
 ## Pull requests
 

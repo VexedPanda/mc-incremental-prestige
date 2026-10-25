@@ -1,0 +1,62 @@
+{
+  "comment": "GameTest-only EMC values (never in the jar): arbitrary distinct numbers for the GT machines and casings the GT sweep tests place, and the golden helmet the inventory conversion test wears. The Transmutation Tablet is set to 0 in src/test/config/ProjectE/custom_emc.json instead: these values must be positive. Vanilla items whose recipes GregTech replaces (diamond block, cauldron, minecart, helmet, ...) need no pins: the GT recipe EMC mapper values them from GT's recipes.",
+  "values": {
+    "after": [
+      {
+        "type": "projecte:item",
+        "id": "minecraft:golden_helmet",
+        "emc_value": 1000
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:heatproof_machine_casing",
+        "emc_value": 100
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:cupronickel_coil_block",
+        "emc_value": 200
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:electric_blast_furnace",
+        "emc_value": 5000
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:lv_energy_input_hatch",
+        "emc_value": 300
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:maintenance_hatch",
+        "emc_value": 400
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:lv_muffler_hatch",
+        "emc_value": 500
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:lv_input_bus",
+        "emc_value": 600
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:lv_output_bus",
+        "emc_value": 700
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:lv_input_hatch",
+        "emc_value": 800
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:lv_electric_furnace",
+        "emc_value": 900
+      }
+    ]
+  }
+}

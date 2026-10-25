@@ -1,0 +1,77 @@
+{
+  "comment": "GameTest-only (never in the jar): prices for the GT leaf materials that no recipe chain values, so the GT recipe EMC mapper (VexedPanda/Mc-incremental#52) can value machines and circuits up to EV. The Pack prices these itself in config/ProjectE/custom_emc.json.",
+  "values": {
+    "before": [
+      {
+        "type": "projecte:item",
+        "id": "gtceu:aluminium_dust",
+        "emc_value": 1024
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:zinc_dust",
+        "emc_value": 512
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:nickel_dust",
+        "emc_value": 1024
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:sulfur_dust",
+        "emc_value": 384
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:diamond_dust",
+        "emc_value": 8192
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:chromium_dust",
+        "emc_value": 1024
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:manganese_dust",
+        "emc_value": 512
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:titanium_dust",
+        "emc_value": 2048
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:antimony_dust",
+        "emc_value": 512
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:gallium_dust",
+        "emc_value": 2048
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:arsenic_dust",
+        "emc_value": 512
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:neodymium_dust",
+        "emc_value": 2048
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:salt_dust",
+        "emc_value": 16
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:rock_salt_dust",
+        "emc_value": 16
+      }
+    ]
+  }
+}
