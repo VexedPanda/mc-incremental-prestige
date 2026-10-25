@@ -13,9 +13,12 @@ import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import moze_intel.projecte.api.ItemInfo;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.RegistryOps;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -30,6 +33,10 @@ final class WorldEmcData extends SavedData {
 
     BigInteger balance = BigInteger.ZERO;
     final Set<ItemInfo> knowledge = new LinkedHashSet<>();
+    /** Fluids in the world's Knowledge, as source fluid ids (#36). */
+    final Set<ResourceLocation> fluids = new LinkedHashSet<>();
+    /** Thousandths of an EMC beside {@link #balance}, 0 to 999, left over from fluid transfers (#36). */
+    long fractionalMilliEmc;
 
     /** Players whose ProjectE data holds the world's values; only these are read back for changes. */
     final Set<ServerPlayer> mirrored = Collections.newSetFromMap(new WeakHashMap<>());
@@ -47,6 +54,10 @@ final class WorldEmcData extends SavedData {
                 .encodeStart(RegistryOps.create(NbtOps.INSTANCE, registries), List.copyOf(knowledge))
                 .resultOrPartial(e -> McIncrementalPrestige.LOGGER.error("Can't save world Knowledge: {}", e))
                 .ifPresent(list -> tag.put("knowledge", list));
+        ListTag fluidList = new ListTag();
+        for (ResourceLocation fluid : fluids) fluidList.add(StringTag.valueOf(fluid.toString()));
+        tag.put("fluids", fluidList);
+        tag.putLong("fractional_milli_emc", fractionalMilliEmc);
         return tag;
     }
 
@@ -64,6 +75,11 @@ final class WorldEmcData extends SavedData {
                     .resultOrPartial(e -> McIncrementalPrestige.LOGGER.error("Can't load world Knowledge: {}", e))
                     .ifPresent(data.knowledge::addAll);
         }
+        for (Tag fluid : tag.getList("fluids", Tag.TAG_STRING)) {
+            ResourceLocation id = ResourceLocation.tryParse(fluid.getAsString());
+            if (id != null) data.fluids.add(id);
+        }
+        data.fractionalMilliEmc = Math.floorMod(tag.getLong("fractional_milli_emc"), 1000L);
         return data;
     }
 }

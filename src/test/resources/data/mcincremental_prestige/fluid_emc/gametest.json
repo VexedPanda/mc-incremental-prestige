@@ -1,0 +1,7 @@
+{
+  "comment": "GameTest-only fluid EMC values (never in the jar). Lava's value is not a multiple of 1000, so a mB of lava is worth a fraction of an EMC. Water is deliberately unlisted (worth 0).",
+  "emc_per_1000_mb": {
+    "minecraft:lava": 1500,
+    "mcincremental_prestige:not_a_fluid": 7
+  }
+}

@@ -12,9 +12,12 @@ import moze_intel.projecte.api.capabilities.IKnowledgeProvider;
 import moze_intel.projecte.api.capabilities.PECapabilities;
 import moze_intel.projecte.api.event.PlayerKnowledgeChangeEvent;
 import moze_intel.projecte.api.proxy.IEMCProxy;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.util.FakePlayer;
@@ -212,5 +215,89 @@ public final class WorldEmc {
         } catch (UnsupportedOperationException e) {
             McIncrementalPrestige.LOGGER.debug("Can't sync ProjectE data to {}: {}", player.getScoreboardName(), e.getMessage());
         }
+    }
+
+    // ---- Fluids (#36) ----
+    // Knowledge also holds fluids, kept beside the items as source fluid ids. ProjectE has no fluid Knowledge, so these
+    // are not mirrored to players. An mB of fluid is usually worth a fraction of an EMC: the fraction is banked as the
+    // world's fractional EMC (thousandths, 0 to 999) so that fluid in and out is exact.
+
+    /** Thousandths of an EMC banked beside the whole balance (0 to 999), left over from fluid transfers. */
+    public static long fractionalMilliEmc(MinecraftServer server) {
+        return capture(server).fractionalMilliEmc;
+    }
+
+    /** Credits the world with the EMC value of {@code mB} of {@code fluid} ({@link FluidEmc}), exactly. */
+    public static void addFluidEmc(MinecraftServer server, Fluid fluid, long mB) {
+        if (mB < 0) throw new IllegalArgumentException("Negative amount: " + mB);
+        WorldEmcData data = capture(server);
+        BigInteger[] whole = FluidEmc.milliValue(fluid, mB).add(BigInteger.valueOf(data.fractionalMilliEmc)).divideAndRemainder(MILLI);
+        setFractional(data, whole[1].longValueExact());
+        addEmc(server, whole[0]);
+    }
+
+    /**
+     * Debits the world with the EMC value of {@code mB} of {@code fluid} if the balance (with its fractional EMC) holds
+     * it; otherwise changes nothing.
+     *
+     * @return whether the EMC was removed
+     */
+    public static boolean removeFluidEmc(MinecraftServer server, Fluid fluid, long mB) {
+        if (mB < 0) throw new IllegalArgumentException("Negative amount: " + mB);
+        WorldEmcData data = capture(server);
+        BigInteger available = data.balance.multiply(MILLI).add(BigInteger.valueOf(data.fractionalMilliEmc));
+        BigInteger left = available.subtract(FluidEmc.milliValue(fluid, mB));
+        if (left.signum() < 0) return false;
+        BigInteger[] whole = left.divideAndRemainder(MILLI);
+        setFractional(data, whole[1].longValueExact());
+        if (!whole[0].equals(data.balance)) setBalance(data, whole[0]);
+        return true;
+    }
+
+    /** How many mB of {@code fluid} the world's balance pays for; 0 when it has no value. */
+    public static long affordableMb(MinecraftServer server, Fluid fluid) {
+        long value = FluidEmc.valuePerBucket(fluid);
+        if (value <= 0) return 0;
+        WorldEmcData data = capture(server);
+        BigInteger mB = data.balance.multiply(MILLI).add(BigInteger.valueOf(data.fractionalMilliEmc)).divide(BigInteger.valueOf(value));
+        return mB.min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
+    }
+
+    /** Adds a fluid (its source) to the world's Knowledge. @return whether it was newly learned */
+    public static boolean learnFluid(MinecraftServer server, Fluid fluid) {
+        WorldEmcData data = capture(server);
+        if (!data.fluids.add(fluidId(fluid))) return false;
+        data.setDirty();
+        return true;
+    }
+
+    /** Removes a fluid from the world's Knowledge. @return whether it was known */
+    public static boolean forgetFluid(MinecraftServer server, Fluid fluid) {
+        WorldEmcData data = capture(server);
+        if (!data.fluids.remove(fluidId(fluid))) return false;
+        data.setDirty();
+        return true;
+    }
+
+    /** Whether the world's Knowledge holds this fluid (or its source). */
+    public static boolean knowsFluid(MinecraftServer server, Fluid fluid) {
+        return capture(server).fluids.contains(fluidId(fluid));
+    }
+
+    /** A copy of the fluids in the world's Knowledge, as source fluid ids (including any no longer installed). */
+    public static Set<ResourceLocation> knownFluids(MinecraftServer server) {
+        return Set.copyOf(capture(server).fluids);
+    }
+
+    private static final BigInteger MILLI = BigInteger.valueOf(1000);
+
+    private static ResourceLocation fluidId(Fluid fluid) {
+        return BuiltInRegistries.FLUID.getKey(FluidEmc.source(fluid));
+    }
+
+    private static void setFractional(WorldEmcData data, long milli) {
+        if (data.fractionalMilliEmc == milli) return;
+        data.fractionalMilliEmc = milli;
+        data.setDirty();
     }
 }
