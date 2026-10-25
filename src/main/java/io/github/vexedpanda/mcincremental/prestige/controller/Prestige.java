@@ -5,6 +5,7 @@ import java.util.List;
 
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
+import io.github.vexedpanda.mcincremental.prestige.run.StartingItems;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,7 +20,7 @@ public final class Prestige {
     private Prestige() {}
 
     /**
-     * Runs a Prestige for the world: wipes every player's inventory, starts a new Run area (border and world spawn
+     * Runs a Prestige for the world: wipes every player's inventory and gives them the starting items, starts a new Run area (border and world spawn
      * move to it) and teleports every player there. The world's EMC balance and Knowledge are untouched.
      *
      * @return the new Run area
@@ -27,7 +28,10 @@ public final class Prestige {
     public static RunArea run(MinecraftServer server) {
         // Prestige sweep of the old Run area goes here, before anything moves (#29).
         List<ServerPlayer> players = players(server);
-        for (ServerPlayer player : players) wipeInventory(player);
+        for (ServerPlayer player : players) {
+            wipeInventory(player);
+            StartingItems.give(player);
+        }
         RunArea area = RunAreas.beginRun(server);
         // Run snapshot of the new area goes here, before players arrive (#29).
         for (ServerPlayer player : players) RunAreas.teleport(player, area);
