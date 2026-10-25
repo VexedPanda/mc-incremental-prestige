@@ -1,0 +1,49 @@
+# Mc-incremental Prestige
+
+The Prestige mod for [Mc-incremental](https://github.com/VexedPanda/Mc-incremental), a Minecraft modpack played as an incremental game. Each Run is confined to a small Run area of an ordinary world. A Prestige ends the Run, refunds everything the players built as EMC, and starts a fresh Run somewhere new. The world keeps its Knowledge and EMC balance.
+
+NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-mods/projecte); GregTech CEu is optional.
+
+## Features
+
+- **Run areas:** each Run is a 3×3-chunk area (configurable) held in by the vanilla world border. Areas are far apart, never centred on an ocean, and give a safe spawn. The first Run starts when the world is created.
+- **Prestige:** start it with the Prestige item (sneak-use, then confirm within 5 s) or `/prestige` (op). The Prestige sweep converts everything players added to the area, at full EMC, then the players move to a new area:
+  - blocks, including multiblocks;
+  - machine, chest and tank contents, drained before any block is removed;
+  - placed fluids, dropped items, minecarts and item frames;
+  - ender chests.
+- **World-global EMC and Knowledge:** shared by every player, with no owners. Players who were offline during a Prestige are refunded and moved when they next join.
+- **EMC barrel:** a block linked to the world's EMC balance. It hands out one configured learned item or fluid, and turns anything piped in into EMC.
+- **Starting items:** every Run, and every join, makes sure players hold the configured starting items (by default a Transmutation Tablet).
+- **Singleplayer performance:** the simulation distance is capped to the Run area.
+
+Design notes: [`docs/prestige-sweep.md`](docs/prestige-sweep.md), [`docs/emc-barrel.md`](docs/emc-barrel.md), [`docs/simulation-distance.md`](docs/simulation-distance.md). The vocabulary and design decisions live in the pack repo's `GLOSSARY.md` and `docs/adr/`.
+
+## Configuration
+
+| File | Key | Default | Meaning |
+|---|---|---|---|
+| `config/mcincremental_prestige-common.toml` | `startingItems` | `projecte:transmutation_tablet` | Items every player is given at each Run start and join |
+| `<world>/serverconfig/mcincremental_prestige-server.toml` | `runArea.radiusChunks` | 1 (3×3) | Run area radius in chunks |
+| | `runArea.minDistanceChunks` | 64 | Minimum distance between Run areas |
+| | `runArea.sweepMarginChunks` | 1 | Extra chunks around the area that the sweep covers |
+| | `runArea.avoidOceans` | true | Skip Run areas centred on an ocean |
+
+Fluid EMC values are data-driven: `data/<namespace>/fluid_emc/*.json` with `{"emc_per_1000_mb": {"minecraft:lava": 64}}`.
+
+## Building and testing
+
+```sh
+./gradlew build                 # jar in build/libs/
+./gradlew runGameTestServer     # NeoForge GameTests, including a GregTech multiblock sweep
+```
+
+Requires Java 21. ProjectE and the pinned GregTech jar are downloaded by the build. CI runs both commands on every push and PR.
+
+## Releases
+
+Run the manual **Release** workflow with a `version` (e.g. `v0.2.0`) and a `ref`. It tags the ref, builds the jar and attaches it to a GitHub release, which the pack then uses.
+
+## License
+
+Apache-2.0.

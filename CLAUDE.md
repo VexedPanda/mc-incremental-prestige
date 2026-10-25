@@ -10,7 +10,7 @@ Design, vocabulary and decisions live in the pack repo: read its `GLOSSARY.md`, 
 
 ## Releases
 
-Pushing a `v*` tag builds the jar and attaches it to a GitHub release; the pack consumes it from there.
+Run the manual `Release` workflow (inputs: `version`, e.g. `v0.2.0`, and `ref`); it tags the ref, builds the jar and attaches it to a GitHub release, which the pack consumes. Cloud sessions can't push tags or create releases directly.
 
 ## Pull requests
 
