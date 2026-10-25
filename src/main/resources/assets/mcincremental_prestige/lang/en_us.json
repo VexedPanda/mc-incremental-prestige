@@ -8,5 +8,6 @@
   "item.mcincremental_prestige.prestige": "Prestige",
   "item.mcincremental_prestige.prestige.confirm": "Prestige? Every player's inventory will be wiped and a new Run will start. Use it once, then sneak and use it within %s seconds to confirm.",
   "mcincremental_prestige.prestige.summary": "Prestige complete: gained %s EMC from the old Run. EMC balance: %s",
-  "commands.mcincremental_prestige.prestige.success": "Prestiged: a new Run has started"
+  "commands.mcincremental_prestige.prestige.success": "Prestiged: a new Run has started",
+  "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run"
 }
