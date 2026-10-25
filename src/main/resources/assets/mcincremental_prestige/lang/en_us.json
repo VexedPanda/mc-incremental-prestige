@@ -6,5 +6,7 @@
   "block.mcincremental_prestige.emc_barrel.unconfigured": "EMC barrel: right-click with a learned item, or a bucket of a learned fluid, to choose what it hands out",
   "block.mcincremental_prestige.emc_barrel.shows": "EMC barrel hands out %s",
   "item.mcincremental_prestige.prestige": "Prestige",
+  "item.mcincremental_prestige.prestige.confirm": "Prestige? Every player's inventory will be wiped and a new Run will start. Use it once, then sneak and use it within %s seconds to confirm.",
+  "mcincremental_prestige.prestige.summary": "Prestige complete: gained %s EMC from the old Run. EMC balance: %s",
   "commands.mcincremental_prestige.prestige.success": "Prestiged: a new Run has started"
 }
