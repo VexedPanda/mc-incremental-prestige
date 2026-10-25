@@ -67,7 +67,10 @@ public final class Prestige {
         RunSnapshots.take(server, area);
         McIncrementalPrestige.LOGGER.info("New Run area {} snapshotted in {} ms",
                 area.centre(), (System.nanoTime() - snapshotStart) / 1_000_000);
-        for (ServerPlayer player : players) RunAreas.teleport(player, area);
+        for (ServerPlayer player : players) {
+            RunAreas.teleport(player, area);
+            MissedPrestige.joinCurrentRun(player);
+        }
         return area;
     }
 
@@ -86,7 +89,7 @@ public final class Prestige {
     }
 
     /** Inventory, armour, offhand, the 2x2 crafting grid and the stack on the cursor. Not the ender chest. */
-    private static void wipeInventory(ServerPlayer player) {
+    static void wipeInventory(ServerPlayer player) {
         player.getInventory().clearContent();
         player.inventoryMenu.getCraftSlots().clearContent();
         player.containerMenu.setCarried(ItemStack.EMPTY);
