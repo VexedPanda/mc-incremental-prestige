@@ -16,7 +16,7 @@ import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-/** Starting items: what every player holds when they first join and at the start of every Run. */
+/** Starting items: what every player is given at the start of every Run and on every join if they lack one. */
 @GameTestHolder(McIncrementalPrestige.MODID)
 @PrefixGameTestTemplate(false)
 public class StartingItemsGameTests {
@@ -32,15 +32,24 @@ public class StartingItemsGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE)
-    public static void rejoiningDoesNotGiveTheStartingItemsAgain(GameTestHelper helper) {
-        ServerPlayer player = GameTests.joinedPlayer(helper, "rejoiner");
-        // Rejoin twice: once still holding the tablet, once after losing it. Neither gives another.
-        player = rejoin(helper, player);
-        helper.assertTrue(count(player, tablet()) == 1, "Rejoining should not duplicate the tablet, got " + count(player, tablet()));
+    public static void aReturningPlayerWhoNoLongerHoldsATabletGetsOneOnJoin(GameTestHelper helper) {
+        ServerPlayer player = GameTests.joinedPlayer(helper, "loser");
         player.getInventory().clearContent();
         player = rejoin(helper, player);
-        helper.assertTrue(count(player, tablet()) == 0,
-                "Starting items are given on first join only, got " + count(player, tablet()) + " tablets");
+        helper.assertTrue(count(player, tablet()) == 1,
+                "A returning player without a tablet should get one, got " + count(player, tablet()));
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE)
+    public static void aReturningPlayerHoldingATabletDoesNotGetASecond(GameTestHelper helper) {
+        ServerPlayer player = GameTests.joinedPlayer(helper, "keeper");
+        // In the offhand, which counts as holding it.
+        player.getInventory().clearContent();
+        player.getInventory().offhand.set(0, new ItemStack(tablet()));
+        player = rejoin(helper, player);
+        helper.assertTrue(count(player, tablet()) == 1, "Rejoining should not give a second tablet, got " + count(player, tablet()));
         player.discard();
         helper.succeed();
     }
