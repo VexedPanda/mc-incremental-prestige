@@ -39,3 +39,8 @@ A `LevelChunk.setBlockState` mixin setting dirty-section bits as a pre-filter, n
 - `sweep.PrestigeSweep.sweep(server)`: phases collect → drain all block entities (#30) → value → remove → entities (#31), then clears the snapshot. Returns the EMC; `Prestige.run` credits it via `WorldEmc.addEmc`. It sweeps the 3×3 only (`PrestigeSweep.MARGIN_CHUNKS = 0`) until #31.
 - No fast path for identical sections beyond skipping all-air live sections: the per-block compare costs a few ms for 9 chunks.
 - ProjectE's `OreBlacklistMapper` (on by default, a ProjectE mapping config option) sets everything in `c:ores` to 0 EMC, overriding even `/projecte setemc`, so placed ores are never swept. GT ore EMC needs that mapper turned off in the pack.
+
+## Restarts (#32)
+
+- The Run area and visited record (`mcincremental_prestige_run_areas`), the Run snapshot and the EMC balance are `SavedData` on the overworld; the world border is vanilla's, saved in `level.dat`. Nothing else is needed for a Run to survive a restart.
+- `gametest.RunRestartGameTests.simulateRestart` stands in for a restart: `saveAllChunks` (forced), then removes every `mcincremental_prestige_*` key from the overworld's `DimensionDataStorage` cache (reflection) so the next read loads from disk, then re-applies the border from the level data. Vanilla's `readSavedData` logs and swallows load errors, so a broken `load` shows up as an empty snapshot (nothing swept), not an exception.
