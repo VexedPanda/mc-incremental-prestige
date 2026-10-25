@@ -1,7 +1,12 @@
 {
-  "comment": "GameTest-only EMC values (never in the jar): arbitrary distinct numbers for the GT machines and casings the GT sweep tests place. Vanilla items whose recipes GregTech replaces (diamond block, cauldron, minecart, helmet, ...) need no pins: the GT recipe EMC mapper values them from GT's recipes.",
+  "comment": "GameTest-only EMC values (never in the jar): arbitrary distinct numbers for the GT machines and casings the GT sweep tests place, and the golden helmet the inventory conversion test wears. The Transmutation Tablet is set to 0 in src/test/config/ProjectE/custom_emc.json instead: these values must be positive. Vanilla items whose recipes GregTech replaces (diamond block, cauldron, minecart, helmet, ...) need no pins: the GT recipe EMC mapper values them from GT's recipes.",
   "values": {
     "after": [
+      {
+        "type": "projecte:item",
+        "id": "minecraft:golden_helmet",
+        "emc_value": 1000
+      },
       {
         "type": "projecte:item",
         "id": "gtceu:heatproof_machine_casing",

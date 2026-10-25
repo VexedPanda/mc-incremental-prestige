@@ -1,0 +1,9 @@
+{
+  "comment": "GameTest-only (copied into run/config/ProjectE by the prepareGameTestConfig task, never in the jar). As in the Pack, the Transmutation Tablet is worth 0 EMC: the mod gives it to every player for free, so converting it must yield nothing. A value of 0 can only be set here, not in pe_custom_conversions.",
+  "entries": [
+    {
+      "id": "projecte:transmutation_tablet",
+      "emc": 0
+    }
+  ]
+}

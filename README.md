@@ -11,7 +11,8 @@ NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-
   - blocks, including multiblocks;
   - machine, chest and tank contents, drained before any block is removed;
   - placed fluids, dropped items, minecarts and item frames;
-  - ender chests.
+  - ender chests;
+  - every online player's inventory: main inventory, armour, offhand, crafting grid, the stack on the cursor and the slots of an open menu (wiped before the starting items are given).
 - **World-global EMC and Knowledge:** shared by every player, with no owners. Players who were offline during a Prestige have their items converted to EMC and are moved when they next join.
 - **EMC barrel:** a block linked to the world's EMC balance. It hands out one configured learned item or fluid, and turns anything piped in into EMC.
 - **Starting items:** every Run, and every join, makes sure players hold the configured starting items (by default a Transmutation Tablet).
@@ -24,7 +25,7 @@ Design notes: [`docs/prestige-sweep.md`](docs/prestige-sweep.md), [`docs/emc-bar
 
 | File | Key | Default | Meaning |
 |---|---|---|---|
-| `config/mcincremental_prestige-common.toml` | `startingItems` | `projecte:transmutation_tablet` | Items every player is given at each Run start and join |
+| `config/mcincremental_prestige-common.toml` | `startingItems` | `projecte:transmutation_tablet` | Items every player is given at each Run start and join. Give each 0 EMC (ProjectE's `custom_emc.json`): a Prestige converts them with the rest of the inventory, then hands out new ones |
 | `<world>/serverconfig/mcincremental_prestige-server.toml` | `runArea.radiusChunks` | 1 (3×3) | Run area radius in chunks |
 | | `runArea.minDistanceChunks` | 64 | Minimum distance between Run areas |
 | | `runArea.sweepMarginChunks` | 1 | Extra chunks around the area that the sweep covers |
@@ -38,6 +39,8 @@ Fluid EMC values are data-driven: `data/<namespace>/fluid_emc/*.json` with `{"em
 ./gradlew build                 # jar in build/libs/
 ./gradlew runGameTestServer     # NeoForge GameTests, including a GregTech multiblock sweep
 ```
+
+`runGameTestServer` first copies `src/test/config/` into `run/config/` (the Pack's 0-EMC Transmutation Tablet, which only ProjectE's `custom_emc.json` can set).
 
 Requires Java 21. ProjectE and the pinned GregTech jar are downloaded by the build. CI runs both commands on every push and PR.
 

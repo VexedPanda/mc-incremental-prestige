@@ -69,10 +69,9 @@ public final class MissedPrestige {
 
     private static void catchUp(ServerPlayer player, RunArea area) {
         EmcCredit credit = new EmcCredit();
-        credit.addAndClear(player.getInventory());
         credit.addAndClear(player.getEnderChestInventory());
+        Prestige.convertInventory(player, credit);
         credit.creditTo(player.getServer());
-        Prestige.wipeInventory(player);
         StartingItems.give(player);
         if (player.level().dimension() == Level.OVERWORLD) {
             RunAreas.teleport(player, area);
