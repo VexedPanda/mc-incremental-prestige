@@ -17,7 +17,14 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.vehicle.MinecartChest;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -226,6 +233,90 @@ public class PrestigeSweepGameTests {
             assertCredited(helper, before, 1500);
         });
         helper.succeed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_placed_entities", timeoutTicks = 400)
+    public static void valueHoldingEntitiesPlacedDuringTheRunAreRefundedWithTheirContents(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> PrestigeGameTests.withWorldRestored(helper, () -> {
+                    long cart = IEMCProxy.INSTANCE.getValue(Items.CHEST_MINECART);
+                    long frame = IEMCProxy.INSTANCE.getValue(Items.ITEM_FRAME);
+                    long stand = IEMCProxy.INSTANCE.getValue(Items.ARMOR_STAND);
+                    long helmet = IEMCProxy.INSTANCE.getValue(Items.DIAMOND_HELMET);
+                    helper.assertTrue(cart > 0 && frame > 0 && stand > 0 && helmet > 0,
+                            "Chest minecarts, item frames, armor stands and diamond helmets need EMC values");
+                    BlockPos pos = surface(helper, startRun(helper));
+                    ServerLevel level = level(helper);
+                    MinecartChest minecart = new MinecartChest(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+                    minecart.setItem(0, new ItemStack(Items.DIAMOND, 2));
+                    ItemFrame itemFrame = new ItemFrame(level, pos.east(2), Direction.UP);
+                    itemFrame.setItem(new ItemStack(Items.DIAMOND), false);
+                    ArmorStand armorStand = new ArmorStand(level, pos.getX() + 4.5, pos.getY(), pos.getZ() + 0.5);
+                    armorStand.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
+                    for (Entity entity : new Entity[] {minecart, itemFrame, armorStand}) {
+                        helper.assertTrue(level.addFreshEntity(entity), entity + " should spawn");
+                    }
+                    BigInteger before = WorldEmc.balance(server);
+
+                    PrestigeGameTests.runPrestigeCommand(helper);
+
+                    for (Entity entity : new Entity[] {minecart, itemFrame, armorStand}) {
+                        helper.assertTrue(entity.isRemoved(), entity + " should be swept");
+                    }
+                    helper.assertTrue(level.getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(8)).isEmpty(),
+                            "Sweeping the entities should drop nothing");
+                    // ProjectE's default value for a diamond: 8192; two in the minecart and one in the frame.
+                    assertCredited(helper, before, cart + 2 * 8192 + frame + 8192 + stand + helmet);
+                }))
+                .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_original_entities", timeoutTicks = 400)
+    public static void entitiesPresentAtRunStartAreLeftAlone(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> PrestigeGameTests.withWorldRestored(helper, () -> {
+                    long frame = IEMCProxy.INSTANCE.getValue(Items.ITEM_FRAME);
+                    helper.assertTrue(frame > 0, "Item frames need an EMC value for this test to mean anything");
+                    RunArea area = startRun(helper);
+                    BlockPos pos = surface(helper, area);
+                    ServerLevel level = level(helper);
+                    MinecartChest original = new MinecartChest(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+                    original.setItem(0, new ItemStack(Items.DIAMOND, 2));
+                    ItemFrame originalFrame = new ItemFrame(level, pos.east(2), Direction.UP);
+                    originalFrame.setItem(new ItemStack(Items.DIAMOND), false);
+                    helper.assertTrue(level.addFreshEntity(original) && level.addFreshEntity(originalFrame),
+                            "The original entities should spawn");
+                    // As if they were there when the Run started (e.g. a mineshaft's chest minecart).
+                    RunSnapshots.take(server, area);
+                    // Control: the same item frame placed during the Run is swept.
+                    ItemFrame placed = new ItemFrame(level, pos.east(4), Direction.UP);
+                    placed.setItem(new ItemStack(Items.DIAMOND), false);
+                    helper.assertTrue(level.addFreshEntity(placed), "The placed item frame should spawn");
+                    BigInteger before = WorldEmc.balance(server);
+
+                    PrestigeGameTests.runPrestigeCommand(helper);
+
+                    try {
+                        helper.assertFalse(original.isRemoved(), "The chest minecart present at Run start should be kept");
+                        helper.assertTrue(original.getItem(0).is(Items.DIAMOND) && original.getItem(0).getCount() == 2,
+                                "Its contents should be kept, found " + original.getItem(0));
+                        helper.assertFalse(originalFrame.isRemoved(), "The item frame present at Run start should be kept");
+                        helper.assertTrue(originalFrame.getItem().is(Items.DIAMOND), "Its item should be kept");
+                        helper.assertTrue(placed.isRemoved(), "The item frame placed during the Run should be swept");
+                        // ProjectE's default value for a diamond: 8192.
+                        assertCredited(helper, before, frame + 8192);
+                    } finally {
+                        original.discard();
+                        originalFrame.discard();
+                    }
+                }))
+                .thenSucceed();
     }
 
     /** Prestiges to start a Run in a new Run area and returns it. */

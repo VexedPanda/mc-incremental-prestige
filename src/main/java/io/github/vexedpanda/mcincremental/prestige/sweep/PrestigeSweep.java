@@ -13,7 +13,15 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.decoration.GlowItemFrame;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.vehicle.ContainerEntity;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
@@ -25,6 +33,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.material.FluidState;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.IItemHandler;
 
 /**
  * The Prestige sweep (ADR-0007, mod {@code docs/prestige-sweep.md}): diffs the Run area against the world's Run
@@ -115,11 +125,54 @@ public final class PrestigeSweep {
         }
         BigInteger total = BigInteger.ZERO;
         for (Entity entity : inBox) {
-            if (entity.isRemoved() || !(entity instanceof ItemEntity item)) continue;
-            total = total.add(BigInteger.valueOf(emc(item.getItem())));
-            item.discard();
+            if (entity.isRemoved()) continue;
+            long value;
+            if (entity instanceof ItemEntity item) {
+                value = emc(item.getItem());
+            } else {
+                if (!isSweepable(entity)) continue;
+                value = entityValue(entity);
+                if (value <= 0) continue;
+                // Discarding a container entity spills its contents: they are refunded, so empty it first.
+                if (entity instanceof Container container) container.clearContent();
+            }
+            total = total.add(BigInteger.valueOf(value));
+            entity.discard();
         }
         return total;
+    }
+
+    /**
+     * Whether a non-item entity may be swept: not a player or mob (an armor stand is a decoration), and not a container
+     * entity with an unrolled loot table (reading or removing it would roll the loot).
+     */
+    private static boolean isSweepable(Entity entity) {
+        if (entity instanceof LivingEntity && !(entity instanceof ArmorStand)) return false;
+        return !(entity instanceof ContainerEntity container && container.getLootTable() != null);
+    }
+
+    /** An entity's EMC: its item form plus everything it holds. */
+    private static long entityValue(Entity entity) {
+        long value;
+        if (entity instanceof ItemFrame frame) {
+            // An item frame's pick result is its framed item when it has one.
+            value = emc(new ItemStack(frame instanceof GlowItemFrame ? Items.GLOW_ITEM_FRAME : Items.ITEM_FRAME));
+            value += emc(frame.getItem());
+            return value;
+        }
+        ItemStack form = entity.getPickResult();
+        value = form == null ? 0 : emc(form);
+        if (entity instanceof Container container) {
+            for (int slot = 0; slot < container.getContainerSize(); slot++) value += emc(container.getItem(slot));
+        } else if (entity instanceof ArmorStand stand) {
+            for (EquipmentSlot slot : EquipmentSlot.values()) value += emc(stand.getItemBySlot(slot));
+        } else {
+            IItemHandler items = entity.getCapability(Capabilities.ItemHandler.ENTITY);
+            if (items != null) {
+                for (int slot = 0; slot < items.getSlots(); slot++) value += emc(items.getStackInSlot(slot));
+            }
+        }
+        return value;
     }
 
     /**
