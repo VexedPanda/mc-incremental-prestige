@@ -2,6 +2,7 @@ package io.github.vexedpanda.mcincremental.prestige.barrel;
 
 import java.math.BigInteger;
 
+import io.github.vexedpanda.mcincremental.prestige.emc.ItemEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import moze_intel.projecte.api.ItemInfo;
 import moze_intel.projecte.api.proxy.IEMCProxy;
@@ -38,7 +39,7 @@ final class EmcBarrelItemHandler implements IItemHandler {
         MinecraftServer server = barrel.server();
         if (server == null || stack.isEmpty() || !isItemValid(slot, stack)) return stack;
         if (!simulate) {
-            WorldEmc.addEmc(server, value(stack).multiply(BigInteger.valueOf(stack.getCount())));
+            WorldEmc.addEmc(server, ItemEmc.stackValue(stack));
             WorldEmc.learn(server, stack);
         }
         return ItemStack.EMPTY;
@@ -49,7 +50,7 @@ final class EmcBarrelItemHandler implements IItemHandler {
         ItemStack out = available(amount);
         if (out.isEmpty() || simulate) return out;
         // Can't fail: available() just checked the balance, on the server thread.
-        if (!WorldEmc.removeEmc(barrel.server(), value(out).multiply(BigInteger.valueOf(out.getCount())))) return ItemStack.EMPTY;
+        if (!WorldEmc.removeEmc(barrel.server(), ItemEmc.stackValue(out))) return ItemStack.EMPTY;
         return out;
     }
 
@@ -62,7 +63,7 @@ final class EmcBarrelItemHandler implements IItemHandler {
         ItemInfo item = barrel.configuredItem();
         if (server == null || item == null || max <= 0 || !WorldEmc.knows(server, item)) return ItemStack.EMPTY;
         ItemStack stack = item.createStack();
-        BigInteger value = value(stack);
+        BigInteger value = ItemEmc.stackValue(stack);
         if (value.signum() <= 0) return ItemStack.EMPTY;
         BigInteger affordable = WorldEmc.balance(server).divide(value);
         int count = (int) Math.min(Math.min(max, stack.getMaxStackSize()), affordable.min(BigInteger.valueOf(Integer.MAX_VALUE)).longValue());
@@ -77,10 +78,5 @@ final class EmcBarrelItemHandler implements IItemHandler {
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
         return IEMCProxy.INSTANCE.hasValue(stack);
-    }
-
-    /** EMC value of one of this item. */
-    private static BigInteger value(ItemStack stack) {
-        return BigInteger.valueOf(IEMCProxy.INSTANCE.getValue(stack));
     }
 }

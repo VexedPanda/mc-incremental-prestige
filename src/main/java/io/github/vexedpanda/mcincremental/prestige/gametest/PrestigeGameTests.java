@@ -299,18 +299,29 @@ public class PrestigeGameTests {
      * between runs: put them back whatever happens.
      */
     static void withWorldRestored(GameTestHelper helper, Runnable body) {
+        Runnable restore = saveWorld(helper);
+        try {
+            body.run();
+        } finally {
+            restore.run();
+        }
+    }
+
+    /**
+     * Saves the world border and world spawn, for a test that Prestiges across several steps; run the result whatever
+     * happens. {@link #withWorldRestored} does this for one step.
+     */
+    static Runnable saveWorld(GameTestHelper helper) {
         ServerLevel level = helper.getLevel().getServer().overworld();
         WorldBorder border = level.getWorldBorder();
         double x = border.getCenterX(), z = border.getCenterZ(), size = border.getSize();
         BlockPos spawn = level.getSharedSpawnPos();
         float spawnAngle = level.getSharedSpawnAngle();
-        try {
-            body.run();
-        } finally {
+        return () -> {
             border.setCenter(x, z);
             border.setSize(size);
             level.setDefaultSpawnPos(spawn, spawnAngle);
-        }
+        };
     }
 
     private static ItemStack craft(GameTestHelper helper, Item input) {

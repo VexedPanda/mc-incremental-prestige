@@ -7,6 +7,7 @@ import javax.annotation.Nullable;
 
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrelBlockEntity;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
+import io.github.vexedpanda.mcincremental.prestige.sweep.gt.GtRecipesInProgress;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -15,6 +16,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -24,15 +26,16 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 /**
- * Phase 2 of the Prestige sweep: empties a block's inventories and tanks into a {@link Refund} through NeoForge's item
+ * Phase 2 of the Prestige sweep: empties a block's inventories and tanks into an {@link EmcCredit} through NeoForge's item
  * and fluid handler capabilities, so it works for any mod's machines (GT buses, hatches and machines included) without
  * depending on them. Server thread only.
  *
  * <p>Items: every slot of every handler (unsided, then each side) is extracted; what a handler won't hand out (a GT
- * input bus, a furnace's fuel slot) is cleared with {@link IItemHandlerModifiable#setStackInSlot} and refunded too.
- * Fluids with an EMC value are drained the same way. Anything still left can't be taken out: it is refunded only if the
+ * input bus, a furnace's fuel slot) is cleared with {@link IItemHandlerModifiable#setStackInSlot} and credited too.
+ * Fluids with an EMC value are drained the same way. Anything still left can't be taken out: it is credited only if the
  * block is about to be removed (it goes with the block entity), counted once, from the unsided handler; a kept block
- * keeps it and nothing is credited.
+ * keeps it and nothing is credited. The same goes for the inputs a GregTech machine consumed for a recipe it hasn't
+ * finished ({@link GtRecipesInProgress}, only with GregTech installed).
  *
  * <p>Skipped entirely: unrolled loot containers (reading them would roll the loot) and EMC barrels (their handlers are
  * the world balance itself, docs/emc-barrel.md).
@@ -40,15 +43,17 @@ import net.neoforged.neoforge.items.wrapper.InvWrapper;
 final class SweptContents {
     /** Guards against handlers that never run dry (creative sources): extractions per slot or tank. */
     private static final int MAX_PULLS = 64;
+    /** GregTech is optional: {@link GtRecipesInProgress} is only loaded when it is installed. */
+    private static final boolean GREGTECH_LOADED = ModList.get().isLoaded("gtceu");
 
     private SweptContents() {}
 
     /**
-     * Empties the block at {@code pos} into {@code refund}.
+     * Empties the block at {@code pos} into {@code credit}.
      *
      * @param removed whether the sweep removes the block afterwards, so anything that can't be taken out is lost with it
      */
-    static void drain(ServerLevel level, BlockPos pos, @Nullable BlockEntity blockEntity, boolean removed, Refund refund) {
+    static void drain(ServerLevel level, BlockPos pos, @Nullable BlockEntity blockEntity, boolean removed, EmcCredit credit) {
         if (blockEntity instanceof EmcBarrelBlockEntity) return;
         if (blockEntity instanceof RandomizableContainerBlockEntity loot && loot.getLootTable() != null) return;
         BlockState state = level.getBlockState(pos);
@@ -57,47 +62,49 @@ final class SweptContents {
                 ? List.of(new InvWrapper(chest))
                 : handlers(level, pos, state, blockEntity, Capabilities.ItemHandler.BLOCK);
         for (IItemHandler handler : items) {
-            for (int slot = 0; slot < handler.getSlots(); slot++) drainSlot(handler, slot, refund);
+            for (int slot = 0; slot < handler.getSlots(); slot++) drainSlot(handler, slot, credit);
         }
         if (removed && !items.isEmpty()) {
             IItemHandler all = items.get(0);
-            for (int slot = 0; slot < all.getSlots(); slot++) refund.addItem(all.getStackInSlot(slot));
+            for (int slot = 0; slot < all.getSlots(); slot++) credit.addItem(all.getStackInSlot(slot));
         }
         List<IFluidHandler> tanks = handlers(level, pos, state, blockEntity, Capabilities.FluidHandler.BLOCK);
         for (IFluidHandler handler : tanks) {
-            for (int tank = 0; tank < handler.getTanks(); tank++) drainTank(handler, tank, refund);
+            for (int tank = 0; tank < handler.getTanks(); tank++) drainTank(handler, tank, credit);
         }
         if (removed && !tanks.isEmpty()) {
             IFluidHandler all = tanks.get(0);
             for (int tank = 0; tank < all.getTanks(); tank++) {
                 FluidStack left = all.getFluidInTank(tank);
-                if (!left.isEmpty()) refund.addFluid(left.getFluid(), left.getAmount());
+                if (!left.isEmpty()) credit.addFluid(left.getFluid(), left.getAmount());
             }
         }
+        // A GT machine's unfinished recipe holds the inputs it consumed; they go with the removed machine.
+        if (removed && GREGTECH_LOADED) GtRecipesInProgress.addConsumedInputs(blockEntity, credit);
     }
 
-    private static void drainSlot(IItemHandler handler, int slot, Refund refund) {
+    private static void drainSlot(IItemHandler handler, int slot, EmcCredit credit) {
         for (int i = 0; i < MAX_PULLS; i++) {
             ItemStack in = handler.getStackInSlot(slot);
             if (in.isEmpty()) return;
             ItemStack out = handler.extractItem(slot, in.getCount(), false);
             if (out.isEmpty()) break;
-            refund.addItem(out);
+            credit.addItem(out);
         }
         ItemStack stuck = handler.getStackInSlot(slot);
         if (!stuck.isEmpty() && handler instanceof IItemHandlerModifiable modifiable) {
-            refund.addItem(stuck.copy());
+            credit.addItem(stuck.copy());
             modifiable.setStackInSlot(slot, ItemStack.EMPTY);
         }
     }
 
-    private static void drainTank(IFluidHandler handler, int tank, Refund refund) {
+    private static void drainTank(IFluidHandler handler, int tank, EmcCredit credit) {
         for (int i = 0; i < MAX_PULLS; i++) {
             FluidStack in = handler.getFluidInTank(tank);
             if (in.isEmpty() || !FluidEmc.hasValue(in.getFluid())) return;
             FluidStack out = handler.drain(in.copy(), IFluidHandler.FluidAction.EXECUTE);
             if (out.isEmpty()) return;
-            refund.addFluid(out.getFluid(), out.getAmount());
+            credit.addFluid(out.getFluid(), out.getAmount());
         }
     }
 

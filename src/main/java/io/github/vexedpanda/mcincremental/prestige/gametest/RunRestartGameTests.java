@@ -33,7 +33,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @PrefixGameTestTemplate(false)
 public class RunRestartGameTests {
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "run_restart", timeoutTicks = 400)
-    public static void afterARestartMidRunPrestigeRefundsBlocksPlacedBeforeIt(GameTestHelper helper) {
+    public static void afterARestartMidRunPrestigeCreditsBlocksPlacedBeforeIt(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()

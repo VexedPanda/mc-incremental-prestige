@@ -245,7 +245,7 @@ public final class WorldEmc {
     public static boolean removeFluidEmc(MinecraftServer server, Fluid fluid, long mB) {
         if (mB < 0) throw new IllegalArgumentException("Negative amount: " + mB);
         WorldEmcData data = capture(server);
-        BigInteger available = data.balance.multiply(MILLI).add(BigInteger.valueOf(data.fractionalMilliEmc));
+        BigInteger available = milliBalance(data);
         BigInteger left = available.subtract(FluidEmc.milliValue(fluid, mB));
         if (left.signum() < 0) return false;
         BigInteger[] whole = left.divideAndRemainder(MILLI);
@@ -259,7 +259,7 @@ public final class WorldEmc {
         long value = FluidEmc.valuePerBucket(fluid);
         if (value <= 0) return 0;
         WorldEmcData data = capture(server);
-        BigInteger mB = data.balance.multiply(MILLI).add(BigInteger.valueOf(data.fractionalMilliEmc)).divide(BigInteger.valueOf(value));
+        BigInteger mB = milliBalance(data).divide(BigInteger.valueOf(value));
         return mB.min(BigInteger.valueOf(Long.MAX_VALUE)).longValue();
     }
 
@@ -293,6 +293,11 @@ public final class WorldEmc {
 
     private static ResourceLocation fluidId(Fluid fluid) {
         return BuiltInRegistries.FLUID.getKey(FluidEmc.source(fluid));
+    }
+
+    /** The whole balance and its fractional EMC together, in thousandths of an EMC. */
+    private static BigInteger milliBalance(WorldEmcData data) {
+        return data.balance.multiply(MILLI).add(BigInteger.valueOf(data.fractionalMilliEmc));
     }
 
     private static void setFractional(WorldEmcData data, long milli) {

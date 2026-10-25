@@ -6,7 +6,7 @@ import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
 import io.github.vexedpanda.mcincremental.prestige.run.StartingItems;
-import io.github.vexedpanda.mcincremental.prestige.sweep.Refund;
+import io.github.vexedpanda.mcincremental.prestige.sweep.EmcCredit;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.server.TickTask;
@@ -23,7 +23,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /**
  * A Prestige only reaches the players online. Every player remembers the last Run they took part in; one who joins
- * having missed a Prestige catches up as if they had been there: their inventory and ender chest are refunded to the
+ * having missed a Prestige catches up as if they had been there: their inventory and ender chest are credited to the
  * world's EMC balance at full value and wiped, they get the starting items and are moved into the current Run area.
  * Server thread only.
  */
@@ -51,7 +51,7 @@ public final class MissedPrestige {
     }
 
     /**
-     * On join, before the starting-items top-up (which would otherwise be refunded): a player who missed a Prestige
+     * On join, before the starting-items top-up (which would otherwise be credited): a player who missed a Prestige
      * catches up; a player joining for the first time joins the current Run as they are.
      */
     @SubscribeEvent(priority = EventPriority.HIGH)
@@ -68,10 +68,10 @@ public final class MissedPrestige {
     }
 
     private static void catchUp(ServerPlayer player, RunArea area) {
-        Refund refund = new Refund();
-        refund.addAndClear(player.getInventory());
-        refund.addAndClear(player.getEnderChestInventory());
-        refund.credit(player.getServer());
+        EmcCredit credit = new EmcCredit();
+        credit.addAndClear(player.getInventory());
+        credit.addAndClear(player.getEnderChestInventory());
+        credit.creditTo(player.getServer());
         Prestige.wipeInventory(player);
         StartingItems.give(player);
         if (player.level().dimension() == Level.OVERWORLD) {
@@ -83,7 +83,7 @@ public final class MissedPrestige {
                 if (!player.isRemoved()) RunAreas.teleport(player, area);
             }));
         }
-        McIncrementalPrestige.LOGGER.info("{} missed a Prestige: refunded {} and moved to the Run area around {}",
-                player.getScoreboardName(), refund, area.centre());
+        McIncrementalPrestige.LOGGER.info("{} missed a Prestige: credited {} and moved to the Run area around {}",
+                player.getScoreboardName(), credit, area.centre());
     }
 }

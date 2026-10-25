@@ -5,8 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
+import io.github.vexedpanda.mcincremental.prestige.emc.ItemEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
-import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.Container;
@@ -18,7 +18,7 @@ import net.minecraft.world.level.material.Fluid;
  * amounts, which {@link #credit} pays through {@link WorldEmc#addFluidEmc} so fractions of an EMC are kept exactly.
  * Collect everything first, then credit once. Server thread only.
  */
-public final class Refund {
+public final class EmcCredit {
     private BigInteger emc = BigInteger.ZERO;
     /** mB by source fluid; only fluids with an EMC value. */
     private final Map<Fluid, Long> fluids = new LinkedHashMap<>();
@@ -37,8 +37,7 @@ public final class Refund {
 
     /** Adds a stack's full EMC value (its ProjectE value times its count); a stack with no value adds nothing. */
     public void addItem(ItemStack stack) {
-        if (stack.isEmpty()) return;
-        emc = emc.add(BigInteger.valueOf(IEMCProxy.INSTANCE.getValue(stack)).multiply(BigInteger.valueOf(stack.getCount())));
+        emc = emc.add(ItemEmc.stackValue(stack));
     }
 
     /** Adds {@code mB} of a fluid at its {@link FluidEmc} value; a fluid with no value is ignored. */
@@ -59,7 +58,7 @@ public final class Refund {
     }
 
     /** Credits everything collected to the world's balance. */
-    public void credit(MinecraftServer server) {
+    public void creditTo(MinecraftServer server) {
         WorldEmc.addEmc(server, emc);
         fluids.forEach((fluid, mB) -> WorldEmc.addFluidEmc(server, fluid, mB));
     }

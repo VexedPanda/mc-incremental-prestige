@@ -42,7 +42,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @PrefixGameTestTemplate(false)
 public class PrestigeSweepInventoryGameTests {
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_inventories", timeoutTicks = 400)
-    public static void chestAndMachineContentsAreRefundedAtFullEmc(GameTestHelper helper) {
+    public static void chestAndMachineContentsAreCreditedAtFullEmc(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -57,7 +57,7 @@ public class PrestigeSweepInventoryGameTests {
                     BlockPos oldChest = origin.north(3);
                     BlockPos left = origin, right = origin.east(), furnace = origin.east(3);
                     // A chest that was there at Run start (e.g. one the players emptied of its loot): its contents
-                    // are refunded and taken, the chest itself is kept.
+                    // are credited and taken, the chest itself is kept.
                     level.setBlockAndUpdate(oldChest, Blocks.CHEST.defaultBlockState());
                     RunSnapshots.take(server, area);
                     container(level, oldChest).setItem(0, new ItemStack(Items.DIAMOND, 2));
@@ -88,7 +88,7 @@ public class PrestigeSweepInventoryGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_fluids", timeoutTicks = 400)
-    public static void tankAndPlacedFluidSourceAreRefundedAtTheirFluidEmc(GameTestHelper helper) {
+    public static void tankAndPlacedFluidSourceAreCreditedAtTheirFluidEmc(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -170,7 +170,7 @@ public class PrestigeSweepInventoryGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_ender_chest", timeoutTicks = 400)
-    public static void enderChestIsRefundedAndEmptied(GameTestHelper helper) {
+    public static void enderChestIsCreditedAndEmptied(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -181,7 +181,7 @@ public class PrestigeSweepInventoryGameTests {
                     try {
                         player.getEnderChestInventory().setItem(0, new ItemStack(Items.DIAMOND, 3));
                         player.getEnderChestInventory().setItem(26, new ItemStack(Items.IRON_INGOT, 10));
-                        // The player's own inventory is wiped, not refunded.
+                        // The player's own inventory is wiped, not credited.
                         player.getInventory().add(new ItemStack(Items.DIAMOND, 7));
                         BigInteger before = WorldEmc.balance(server);
 

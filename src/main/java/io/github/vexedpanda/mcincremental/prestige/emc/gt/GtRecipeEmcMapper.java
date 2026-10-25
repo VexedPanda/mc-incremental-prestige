@@ -63,7 +63,8 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
  *   <li>Fluids are valued per 1000 mB, from {@code fluid_emc} datapack values ({@link FluidEmc}); never from buckets.
  *       A fluid listed at 0 (water, steam) is free and left out, and so is water when unlisted (ADR-0005). An unlisted
  *       fluid gets no fixed value: it is valued only through GT recipes that make it (e.g. a fluid extractor melting an
- *       ingot). Amounts are scaled so a recipe's fluid amounts stay exact.</li>
+ *       ingot), and that value is published for {@link FluidEmc} ({@link FluidEmc#derivedValueKey}), so a tank of it
+ *       is worth what the recipes cost it at. Amounts are scaled so a recipe's fluid amounts stay exact.</li>
  *   <li>A conversion never makes its output free ({@link NeverFreeArithmetic}): a recipe with no consumed input, or
  *       whose valued byproduct fluids are worth more than its inputs, gives no value instead.</li>
  * </ul>
@@ -100,13 +101,13 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
             RegistryAccess registryAccess, ResourceManager resourceManager) {
         NSSFake.setCurrentNamespace(McIncrementalPrestige.MODID + ":gt_recipes");
         try {
-            Run run = new Run(collector);
+            MappingPass pass = new MappingPass(collector);
             int mapped = 0;
             int skipped = 0;
             for (var type : BuiltInRegistries.RECIPE_TYPE) {
                 if (!(type instanceof GTRecipeType gtType)) continue;
                 for (RecipeHolder<GTRecipe> holder : serverResources.getRecipeManager().getAllRecipesFor(gtType)) {
-                    if (run.map(holder.value())) mapped++;
+                    if (pass.map(holder.value())) mapped++;
                     else skipped++;
                 }
             }
@@ -117,7 +118,7 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
     }
 
     /** State for one mapping pass: the fluid nodes and ingredient groups created so far. */
-    private static final class Run {
+    private static final class MappingPass {
         private final IMappingCollector<NormalizedSimpleStack, Long> collector;
         private final Map<Fluid, NormalizedSimpleStack> fluidNodes = new HashMap<>();
         private final Map<Set<NormalizedSimpleStack>, NormalizedSimpleStack> groups = new HashMap<>();
@@ -130,7 +131,7 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         private final IValueArithmetic<?> arithmetic;
 
         @SuppressWarnings({"rawtypes", "unchecked"})
-        Run(IMappingCollector<NormalizedSimpleStack, Long> collector) {
+        MappingPass(IMappingCollector<NormalizedSimpleStack, Long> collector) {
             this.collector = collector;
             if (collector instanceof IExtendedMappingCollector ext) {
                 extended = ext;
@@ -298,13 +299,18 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
                 if (listed.isPresent()) {
                     collector.setValueBefore(node, listed.getAsLong());
                     valuedFluids.add(node);
+                } else {
+                    // Publish the value derived for the fluid, so tanks and the barrel use it too (FluidEmc).
+                    Object2IntMap<NormalizedSimpleStack> bucket = new Object2IntOpenHashMap<>();
+                    bucket.put(node, 1);
+                    collector.addConversion(1, FluidEmc.derivedValueKey(f).toNSS(), bucket);
                 }
                 return node;
             });
         }
     }
 
-    /** Material forms (GT tag prefix names) whose recycling recipes ({@link Run#isMaterialFormChange}) are mapped. */
+    /** Material forms (GT tag prefix names) whose recycling recipes ({@link MappingPass#isMaterialFormChange}) are mapped. */
     private static final Set<String> BASIC_FORMS = Set.of("ingot", "gem", "dust");
 
     /** Marker for a free ingredient, which is left out of the conversion. */

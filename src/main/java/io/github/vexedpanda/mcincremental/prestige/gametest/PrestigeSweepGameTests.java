@@ -191,7 +191,7 @@ public class PrestigeSweepGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_dropped_item", timeoutTicks = 400)
-    public static void droppedItemIsRefundedAndRemoved(GameTestHelper helper) {
+    public static void droppedItemIsCreditedAndRemoved(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -214,7 +214,7 @@ public class PrestigeSweepGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_margin_fluid", timeoutTicks = 400)
-    public static void fluidLeakedIntoTheMarginIsRefunded(GameTestHelper helper) {
+    public static void fluidLeakedIntoTheMarginIsCredited(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         PrestigeGameTests.withWorldRestored(helper, () -> {
             // Half a chunk east of the Run area's edge: past the border, in the (default) one-chunk margin.
@@ -236,7 +236,7 @@ public class PrestigeSweepGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_placed_entities", timeoutTicks = 400)
-    public static void valueHoldingEntitiesPlacedDuringTheRunAreRefundedWithTheirContents(GameTestHelper helper) {
+    public static void valueHoldingEntitiesPlacedDuringTheRunAreCreditedWithTheirContents(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
