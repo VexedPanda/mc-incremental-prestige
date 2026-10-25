@@ -105,12 +105,18 @@ public final class RunAreas {
     }
 
     /**
-     * Moves a player to the Run area's spawn point and makes them respawn there: a bed or anchor respawn point from an
+     * Moves a player to the Run area's spawn point (the world spawn while it is still safe and in the area) and makes them respawn there: a bed or anchor respawn point from an
      * earlier Run is forgotten.
      */
     public static void teleport(ServerPlayer player, RunArea area) {
         ServerLevel level = player.getServer().overworld();
-        BlockPos spawn = spawnPoint(level, area);
+        BlockPos spawn = level.getSharedSpawnPos();
+        if (!area.contains(spawn) || !isSafeSpawn(level, spawn)) {
+            // Not this area's spawn, or the world changed under it since beginRun (e.g. a spring flowed once the area
+            // started ticking): find a safe one again and keep the world spawn in step.
+            spawn = spawnPoint(level, area);
+            level.setDefaultSpawnPos(spawn, 0);
+        }
         player.setRespawnPosition(Level.OVERWORLD, null, 0, false, false);
         player.teleportTo(level, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, player.getYRot(), player.getXRot());
         player.resetFallDistance();
