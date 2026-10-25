@@ -1,7 +1,10 @@
 package io.github.vexedpanda.mcincremental.prestige.sweep;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 import javax.annotation.Nullable;
 
@@ -13,6 +16,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.ChunkPos;
@@ -24,7 +28,7 @@ import net.minecraft.world.level.saveddata.SavedData;
 
 /**
  * The world's one Run snapshot: the block states of the Run area plus its margin as they were at Run start, per chunk
- * section. Held in memory as copies of the live sections' containers; encoded only when saved, with the same codec
+ * section, and the entities there. Held in memory as copies of the live sections' containers; encoded only when saved, with the same codec
  * vanilla chunk saving uses (block states by name, so it survives registry id changes). Saved with the overworld.
  */
 final class RunSnapshotData extends SavedData {
@@ -42,6 +46,8 @@ final class RunSnapshotData extends SavedData {
     int minSection;
     /** Per chunk ({@link ChunkPos#toLong()}): a copy of every section's block states, bottom to top. */
     final Map<Long, PalettedContainer<BlockState>[]> chunks = new HashMap<>();
+    /** Every entity in the snapshot's chunks at Run start, which the sweep leaves alone (item entities aside). */
+    final Set<UUID> entities = new HashSet<>();
 
     static RunSnapshotData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
@@ -51,6 +57,7 @@ final class RunSnapshotData extends SavedData {
         area = null;
         marginChunks = 0;
         chunks.clear();
+        entities.clear();
         setDirty();
     }
 
@@ -73,6 +80,9 @@ final class RunSnapshotData extends SavedData {
             list.add(chunk);
         });
         tag.put("chunks", list);
+        ListTag uuids = new ListTag();
+        for (UUID uuid : entities) uuids.add(NbtUtils.createUUID(uuid));
+        tag.put("entities", uuids);
         return tag;
     }
 
@@ -93,6 +103,7 @@ final class RunSnapshotData extends SavedData {
             }
             data.chunks.put(chunk.getLong("pos"), sections);
         }
+        for (Tag uuid : tag.getList("entities", Tag.TAG_INT_ARRAY)) data.entities.add(NbtUtils.loadUUID(uuid));
         return data;
     }
 }
