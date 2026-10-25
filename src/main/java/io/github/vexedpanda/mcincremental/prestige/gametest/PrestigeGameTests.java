@@ -71,7 +71,7 @@ public class PrestigeGameTests {
 
                     runPrestigeCommand(helper);
 
-                    helper.assertTrue(player.getInventory().isEmpty(), "Inventory should be empty after Prestige");
+                    assertHoldsOnlyOneTablet(helper, player);
                     helper.assertTrue(player.containerMenu.getCarried().isEmpty(), "Carried stack should be wiped");
                     helper.assertTrue(WorldEmc.balance(server).equals(balance),
                             "EMC balance should be kept: " + balance + ", got " + WorldEmc.balance(server));
@@ -174,8 +174,25 @@ public class PrestigeGameTests {
             helper.assertTrue(RunAreas.visited(server).size() == runs + 1, "The confirming sneak-use should start a new Run area");
             RunArea area = RunAreas.current(server).orElseThrow();
             helper.assertTrue(area.contains(player.blockPosition()), "The player should be in the new Run area");
-            helper.assertTrue(player.getInventory().isEmpty(), "Inventory should be wiped");
+            assertHoldsOnlyOneTablet(helper, player);
             player.discard();
+        });
+        helper.succeed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "prestige_starting_items", timeoutTicks = 400)
+    public static void afterPrestigeEveryPlayerHoldsExactlyOneTabletAndNothingElse(GameTestHelper helper) {
+        withWorldRestored(helper, () -> {
+            ServerPlayer a = GameTests.joinedPlayer(helper, "a");
+            ServerPlayer b = GameTests.joinedPlayer(helper, "b");
+            a.getInventory().add(new ItemStack(Items.DIAMOND, 5));
+            b.getInventory().add(new ItemStack(StartingItemsGameTests.tablet()));
+
+            runPrestigeCommand(helper);
+
+            for (ServerPlayer p : new ServerPlayer[] {a, b}) assertHoldsOnlyOneTablet(helper, p);
+            a.discard();
+            b.discard();
         });
         helper.succeed();
     }
@@ -226,6 +243,17 @@ public class PrestigeGameTests {
             b.discard();
         });
         helper.succeed();
+    }
+
+    /** Main inventory, armour and offhand hold one Transmutation Tablet and nothing else. */
+    static void assertHoldsOnlyOneTablet(GameTestHelper helper, ServerPlayer player) {
+        List<ItemStack> held = new ArrayList<>();
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (!stack.isEmpty()) held.add(stack);
+        }
+        helper.assertTrue(held.size() == 1 && held.get(0).is(StartingItemsGameTests.tablet()) && held.get(0).getCount() == 1,
+                player.getScoreboardName() + " should hold exactly one Transmutation Tablet, got " + held);
     }
 
     private static final String CONFIRM_KEY = "item.mcincremental_prestige.prestige.confirm";
