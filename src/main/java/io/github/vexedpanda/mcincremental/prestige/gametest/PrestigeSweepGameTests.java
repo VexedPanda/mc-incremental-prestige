@@ -210,8 +210,10 @@ public class PrestigeSweepGameTests {
     public static void fluidLeakedIntoTheMarginIsRefunded(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         PrestigeGameTests.withWorldRestored(helper, () -> {
-            // Two chunks east of the Run area's middle: past the border, in the one-chunk margin.
-            BlockPos leaked = surface(helper, startRun(helper)).east(32);
+            // Half a chunk east of the Run area's edge: past the border, in the (default) one-chunk margin.
+            RunArea area = startRun(helper);
+            BlockPos middle = surface(helper, area);
+            BlockPos leaked = new BlockPos(area.maxBlockX() + 8, middle.getY(), middle.getZ());
             ServerLevel level = level(helper);
             level.setBlockAndUpdate(leaked, Blocks.LAVA.defaultBlockState());
             BigInteger before = WorldEmc.balance(server);

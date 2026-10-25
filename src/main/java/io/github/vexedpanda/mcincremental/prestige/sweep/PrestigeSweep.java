@@ -33,12 +33,6 @@ import net.minecraft.world.level.material.FluidState;
  * age, fence connections, leaf distance, redstone power). Server thread only.
  */
 public final class PrestigeSweep {
-    /**
-     * Chunks swept around the Run area, on every side (as far as the snapshot covers, {@link RunSnapshots#MARGIN_CHUNKS}):
-     * fluids, explosions and thrown items reach past the world border.
-     */
-    static final int MARGIN_CHUNKS = 1;
-
     /** No neighbour updates (no cascades, no popping attached blocks) and no drops. */
     private static final int REMOVE_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS;
 
@@ -115,12 +109,9 @@ public final class PrestigeSweep {
      * Returns the EMC refunded.
      */
     private static BigInteger sweepEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
-        int radius = RunArea.RADIUS_CHUNKS + Math.min(MARGIN_CHUNKS, snapshot.marginChunks);
-        ChunkPos centre = area.centre();
         List<Entity> inBox = new ArrayList<>();
         for (Entity entity : level.getAllEntities()) {
-            ChunkPos c = entity.chunkPosition();
-            if (Math.abs(c.x - centre.x) <= radius && Math.abs(c.z - centre.z) <= radius) inBox.add(entity);
+            if (area.containsChunk(entity.chunkPosition(), snapshot.marginChunks)) inBox.add(entity);
         }
         BigInteger total = BigInteger.ZERO;
         for (Entity entity : inBox) {
@@ -143,7 +134,7 @@ public final class PrestigeSweep {
     /** Every non-air position whose Block differs from the snapshot's, in the swept chunks. */
     private static List<BlockPos> changedPositions(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
         List<BlockPos> changed = new ArrayList<>();
-        int radius = RunArea.RADIUS_CHUNKS + Math.min(MARGIN_CHUNKS, snapshot.marginChunks);
+        int radius = area.radiusChunks() + snapshot.marginChunks;
         ChunkPos centre = area.centre();
         for (int cx = centre.x - radius; cx <= centre.x + radius; cx++) {
             for (int cz = centre.z - radius; cz <= centre.z + radius; cz++) {

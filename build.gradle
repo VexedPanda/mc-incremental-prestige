@@ -82,6 +82,8 @@ neoForge {
         gameTestServer {
             type = "gameTestServer"
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // A first Run would move the world border and spawn under every test; FirstRunGameTests start it explicitly.
+            systemProperty 'mcincremental_prestige.firstRunOnStart', 'false'
         }
 
         data {

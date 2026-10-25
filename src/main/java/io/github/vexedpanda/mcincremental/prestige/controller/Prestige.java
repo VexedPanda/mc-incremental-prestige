@@ -3,6 +3,7 @@ package io.github.vexedpanda.mcincremental.prestige.controller;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
@@ -41,11 +42,31 @@ public final class Prestige {
             wipeInventory(player);
             StartingItems.give(player);
         }
+        McIncrementalPrestige.LOGGER.info("Prestige: sweep credited {} EMC in {} ms", swept, (sweptAt - start) / 1_000_000);
+        return startRun(server, players);
+    }
+
+    /**
+     * Starts the world's first Run if it has none yet: a new Run area, as after a Prestige, but with no sweep, wipe or
+     * starting items. Does nothing for a world that already has a Run.
+     *
+     * @return the first Run area, or empty if the world already had a Run
+     */
+    public static Optional<RunArea> startFirstRun(MinecraftServer server) {
+        if (RunAreas.current(server).isPresent()) return Optional.empty();
+        return Optional.of(startRun(server, players(server)));
+    }
+
+    /**
+     * Starts a new Run: the single place a Run begins, for a Prestige and for the world's first Run. Chooses a new Run
+     * area (border and world spawn move to it), takes its Run start snapshot and teleports the players there.
+     */
+    private static RunArea startRun(MinecraftServer server, List<ServerPlayer> players) {
         RunArea area = RunAreas.beginRun(server);
         long snapshotStart = System.nanoTime();
         RunSnapshots.take(server, area);
-        McIncrementalPrestige.LOGGER.info("Prestige: sweep credited {} EMC in {} ms; new Run area {} snapshotted in {} ms",
-                swept, (sweptAt - start) / 1_000_000, area.centre(), (System.nanoTime() - snapshotStart) / 1_000_000);
+        McIncrementalPrestige.LOGGER.info("New Run area {} snapshotted in {} ms",
+                area.centre(), (System.nanoTime() - snapshotStart) / 1_000_000);
         for (ServerPlayer player : players) RunAreas.teleport(player, area);
         return area;
     }

@@ -58,6 +58,7 @@ final class RunSnapshotData extends SavedData {
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         if (area == null) return tag;
         tag.putLong("area", area.centre().toLong());
+        tag.putInt("radius", area.radiusChunks());
         tag.putInt("margin", marginChunks);
         tag.putInt("min_section", minSection);
         ListTag list = new ListTag();
@@ -79,7 +80,8 @@ final class RunSnapshotData extends SavedData {
     private static RunSnapshotData load(CompoundTag tag, HolderLookup.Provider registries) {
         RunSnapshotData data = new RunSnapshotData();
         if (!tag.contains("area")) return data;
-        data.area = new RunArea(new ChunkPos(tag.getLong("area")));
+        // Snapshots saved before the radius was configurable have none: their areas were radius 1.
+        data.area = new RunArea(new ChunkPos(tag.getLong("area")), tag.contains("radius") ? tag.getInt("radius") : 1);
         data.marginChunks = tag.getInt("margin");
         data.minSection = tag.getInt("min_section");
         for (Tag t : tag.getList("chunks", Tag.TAG_COMPOUND)) {
