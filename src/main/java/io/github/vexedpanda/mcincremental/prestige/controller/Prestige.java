@@ -1,8 +1,13 @@
 package io.github.vexedpanda.mcincremental.prestige.controller;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
+import io.github.vexedpanda.mcincremental.prestige.sweep.PrestigeSweep;
+import io.github.vexedpanda.mcincremental.prestige.sweep.RunSnapshots;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
 import net.minecraft.server.MinecraftServer;
@@ -19,17 +24,24 @@ public final class Prestige {
     private Prestige() {}
 
     /**
-     * Runs a Prestige for the world: wipes every player's inventory, starts a new Run area (border and world spawn
-     * move to it) and teleports every player there. The world's EMC balance and Knowledge are untouched.
+     * Runs a Prestige for the world: sweeps the current Run area into the world's EMC balance, wipes every player's
+     * inventory, starts a new Run area (border and world spawn move to it), snapshots it and teleports every player
+     * there. Knowledge is untouched, and the balance only grows by what the sweep credits.
      *
      * @return the new Run area
      */
     public static RunArea run(MinecraftServer server) {
-        // Prestige sweep of the old Run area goes here, before anything moves (#29).
+        long start = System.nanoTime();
+        BigInteger swept = PrestigeSweep.sweep(server);
+        WorldEmc.addEmc(server, swept);
+        long sweptAt = System.nanoTime();
         List<ServerPlayer> players = players(server);
         for (ServerPlayer player : players) wipeInventory(player);
         RunArea area = RunAreas.beginRun(server);
-        // Run snapshot of the new area goes here, before players arrive (#29).
+        long snapshotStart = System.nanoTime();
+        RunSnapshots.take(server, area);
+        McIncrementalPrestige.LOGGER.info("Prestige: sweep credited {} EMC in {} ms; new Run area {} snapshotted in {} ms",
+                swept, (sweptAt - start) / 1_000_000, area.centre(), (System.nanoTime() - snapshotStart) / 1_000_000);
         for (ServerPlayer player : players) RunAreas.teleport(player, area);
         return area;
     }
