@@ -111,6 +111,9 @@ neoForge {
         }
     }
 
+    // GameTests that need GregTech's API (src/test/java) compile against Minecraft and NeoForge too.
+    addModdingDependenciesTo(sourceSets.test)
+
     mods {
         // define mod <-> source bindings
         // these are used to tell the game which sources are for which mod
@@ -131,11 +134,47 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// GregTech CEu Modern, pinned: the exact jar the Pack ships, mirrored as a release asset of the pack repo. Fetched with a
+// plain GET (and checked against its SHA-256) rather than through a Gradle repository: GitHub redirects release assets to
+// presigned storage URLs that refuse the HEAD request Gradle's artifact-only repositories send.
+def gregtechUrl = 'https://github.com/VexedPanda/Mc-incremental/releases/download/gtceu-1.21.1-8.0.0-SNAPSHOT%2B20261025-071601-8602baa-202610251526/gtceu-1.21.1-8.0.0-SNAPSHOT%2B20261025-071601-8602baa.jar'
+def gregtechSha256 = '32c9e5f294a8f9adf80d9768ce5b485b613f6149b06134d1e5e157cceb83ce16'
+def gregtechJar = layout.buildDirectory.file('gregtech/gtceu-1.21.1-8.0.0-SNAPSHOT+20261025-071601-8602baa.jar')
+def downloadGregtech = tasks.register('downloadGregtech') {
+    inputs.property('url', gregtechUrl)
+    inputs.property('sha256', gregtechSha256)
+    outputs.file(gregtechJar)
+    def url = gregtechUrl
+    def sha256 = gregtechSha256
+    def jar = gregtechJar
+    doLast {
+        File file = jar.get().asFile
+        file.parentFile.mkdirs()
+        File part = new File(file.path + '.part')
+        new URI(url).toURL().withInputStream { input -> part.withOutputStream { it << input } }
+        String actual = java.security.MessageDigest.getInstance('SHA-256').digest(part.bytes).encodeHex().toString()
+        if (actual != sha256) {
+            part.delete()
+            throw new GradleException("GregTech jar from ${url} has SHA-256 ${actual}, expected ${sha256}")
+        }
+        java.nio.file.Files.move(part.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+def gregtech = files(gregtechJar).builtBy(downloadGregtech)
+
 dependencies {
     // ProjectE PE1.1.0 (CurseForge file 6611984). Compile against it and load it in dev runs and GameTests,
     // but don't publish it: the pack ships ProjectE itself, and neoforge.mods.toml declares it required.
     compileOnly  '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
     localRuntime '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
+
+    // GregTech (the Pack's pinned build), for GameTests only: the sweep must refund GT machines and multiblocks, and
+    // the GT GameTests (src/test/java) form real GT structures. The mod itself never compiles against GT and doesn't
+    // depend on it: it's loaded in dev runs (localRuntime is not published) and compiled into the test source set only.
+    // GT's own dependencies (Configuration, Registrate, ModularUI) are jar-in-jars of this jar.
+    localRuntime     gregtech
+    testCompileOnly  gregtech
+    testCompileOnly  '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -208,4 +247,9 @@ idea {
         downloadSources = true
         downloadJavadoc = true
     }
+}
+
+// src/test/java holds GameTests (run by runGameTestServer), not JUnit tests.
+tasks.named('test', Test).configure {
+    failOnNoDiscoveredTests = false
 }
