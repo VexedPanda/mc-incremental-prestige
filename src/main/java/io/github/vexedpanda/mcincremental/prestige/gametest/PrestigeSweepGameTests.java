@@ -62,7 +62,7 @@ public class PrestigeSweepGameTests {
         helper.startSequence()
                 .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
                 .thenExecute(() -> PrestigeGameTests.withWorldRestored(helper, () -> {
-                    // ProjectE's Raw Ore Blacklist Mapper gives every ore 0 EMC, so an ore is kept whatever the sweep
+                    // ProjectE's OreBlacklistMapper gives everything in c:ores 0 EMC, so an ore is kept whatever the sweep
                     // thinks of it. The amethyst block stands in for an ore with a value (as GT ores will have): it is
                     // natural (geodes) and valued, so keeping it is the sweep's decision.
                     long amethystEmc = IEMCProxy.INSTANCE.getValue(Items.AMETHYST_BLOCK);
