@@ -16,6 +16,7 @@ NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-
 - **EMC barrel:** a block linked to the world's EMC balance. It hands out one configured learned item or fluid, and turns anything piped in into EMC.
 - **Starting items:** every Run, and every join, makes sure players hold the configured starting items (by default a Transmutation Tablet).
 - **Singleplayer performance:** the simulation distance is capped to the Run area.
+- **GregTech EMC values:** when GregTech is installed, a ProjectE EMC mapper values GT items from their GT machine recipes (inputs' cost, fluids at their `fluid_emc` values), so machines, circuits and parts can be transmuted and refunded. Leaf materials no recipe makes (sulfur, titanium, ...) still need a price in ProjectE's `custom_emc.json`. Exclusions are listed in `GtRecipeEmcMapper`; ProjectE's `config/ProjectE/mapping.toml` can turn it off (`mappers.GTRecipeMapper.enabled`).
 
 Design notes: [`docs/prestige-sweep.md`](docs/prestige-sweep.md), [`docs/emc-barrel.md`](docs/emc-barrel.md), [`docs/simulation-distance.md`](docs/simulation-distance.md). The vocabulary and design decisions live in the pack repo's `GLOSSARY.md` and `docs/adr/`.
 

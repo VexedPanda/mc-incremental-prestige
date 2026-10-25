@@ -3,6 +3,7 @@ package io.github.vexedpanda.mcincremental.prestige.emc;
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.TreeMap;
 
 import com.google.gson.Gson;
@@ -53,6 +54,16 @@ public final class FluidEmc {
         Fluid source = source(fluid);
         if (source == Fluids.EMPTY) return 0;
         return values.getOrDefault(BuiltInRegistries.FLUID.getKey(source), 0L);
+    }
+
+    /**
+     * EMC value of 1000 mB of {@code fluid} (flowing fluids count as their source) if a datapack lists it, which
+     * tells a fluid listed at 0 (free, like water) from an unlisted one; empty when unlisted.
+     */
+    public static OptionalLong listedValuePerBucket(Fluid fluid) {
+        Fluid source = source(fluid);
+        Long value = source == Fluids.EMPTY ? null : values.get(BuiltInRegistries.FLUID.getKey(source));
+        return value == null ? OptionalLong.empty() : OptionalLong.of(value);
     }
 
     /** Whether {@code fluid} has a (non-zero) EMC value. */

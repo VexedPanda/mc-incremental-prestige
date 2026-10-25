@@ -1,42 +1,7 @@
 {
-  "comment": "GameTest-only EMC values (never in the jar). GregTech is loaded in dev runs and replaces vanilla recipes ProjectE derives values from (a diamond block no longer comes from 9 diamonds, a cauldron, minecart or helmet needs GT plates), so the vanilla values the sweep tests rely on are pinned here; GT machine and casing values are arbitrary distinct numbers for the GT sweep tests.",
+  "comment": "GameTest-only EMC values (never in the jar): arbitrary distinct numbers for the GT machines and casings the GT sweep tests place. Vanilla items whose recipes GregTech replaces (diamond block, cauldron, minecart, helmet, ...) need no pins: the GT recipe EMC mapper values them from GT's recipes.",
   "values": {
     "after": [
-      {
-        "type": "projecte:item",
-        "id": "minecraft:diamond_block",
-        "emc_value": 73728
-      },
-      {
-        "type": "projecte:item",
-        "id": "minecraft:amethyst_block",
-        "emc_value": 128
-      },
-      {
-        "type": "projecte:item",
-        "id": "minecraft:cauldron",
-        "emc_value": 1792
-      },
-      {
-        "type": "projecte:item",
-        "id": "minecraft:chest_minecart",
-        "emc_value": 1344
-      },
-      {
-        "type": "projecte:item",
-        "id": "minecraft:item_frame",
-        "emc_value": 96
-      },
-      {
-        "type": "projecte:item",
-        "id": "minecraft:armor_stand",
-        "emc_value": 44
-      },
-      {
-        "type": "projecte:item",
-        "id": "minecraft:diamond_helmet",
-        "emc_value": 40960
-      },
       {
         "type": "projecte:item",
         "id": "gtceu:heatproof_machine_casing",
