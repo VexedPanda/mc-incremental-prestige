@@ -6,7 +6,7 @@ import java.util.Optional;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.sweep.PrestigeSweep;
-import io.github.vexedpanda.mcincremental.prestige.sweep.Refund;
+import io.github.vexedpanda.mcincremental.prestige.sweep.EmcCredit;
 import io.github.vexedpanda.mcincremental.prestige.sweep.RunSnapshots;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
@@ -26,24 +26,24 @@ public final class Prestige {
 
     /**
      * Runs a Prestige for the world: sweeps the current Run area into the world's EMC balance, wipes every player's
-     * inventory (refunding their ender chests, then emptying them) and gives them the starting items, starts a new Run area (border and world spawn move to it), snapshots it and teleports every player
+     * inventory (crediting their ender chests, then emptying them) and gives them the starting items, starts a new Run area (border and world spawn move to it), snapshots it and teleports every player
      * there. Knowledge is untouched, and the balance only grows by what the sweep credits.
      *
      * @return the new Run area
      */
     public static RunArea run(MinecraftServer server) {
         long start = System.nanoTime();
-        Refund refund = PrestigeSweep.sweep(server);
+        EmcCredit credit = PrestigeSweep.sweep(server);
         long sweptAt = System.nanoTime();
         List<ServerPlayer> players = players(server);
         for (ServerPlayer player : players) {
-            // The ender chest is refunded (owner decision on #30); the inventory itself is only wiped.
-            refund.addAndClear(player.getEnderChestInventory());
+            // The ender chest is converted to EMC (owner decision on #30); the inventory itself is only wiped.
+            credit.addAndClear(player.getEnderChestInventory());
             wipeInventory(player);
             StartingItems.give(player);
         }
-        refund.credit(server);
-        McIncrementalPrestige.LOGGER.info("Prestige: sweep and ender chests credited {} in {} ms", refund, (sweptAt - start) / 1_000_000);
+        credit.creditTo(server);
+        McIncrementalPrestige.LOGGER.info("Prestige: sweep and ender chests credited {} in {} ms", credit, (sweptAt - start) / 1_000_000);
         return startRun(server, players);
     }
 

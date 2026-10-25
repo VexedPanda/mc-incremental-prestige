@@ -19,14 +19,14 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
  * A player offline during a Prestige catches up on their next join, as if they had been there: their inventory and
- * ender chest are refunded and wiped, they get the starting items and are moved into the current Run area. Each test
+ * ender chest are credited and wiped, they get the starting items and are moved into the current Run area. Each test
  * runs a Prestige, so each has its own batch.
  */
 @GameTestHolder(McIncrementalPrestige.MODID)
 @PrefixGameTestTemplate(false)
 public class MissedPrestigeGameTests {
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "missed_prestige", timeoutTicks = 400)
-    public static void aPlayerAbsentDuringAPrestigeIsRefundedWipedAndMovedOnRejoin(GameTestHelper helper) {
+    public static void aPlayerAbsentDuringAPrestigeIsCreditedWipedAndMovedOnRejoin(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -44,9 +44,9 @@ public class MissedPrestigeGameTests {
                     ServerPlayer back = rejoin(helper, "absentee", saved);
 
                     // 5 diamonds at 8192 and a gold ingot at 2048 (ProjectE defaults).
-                    BigInteger refund = WorldEmc.balance(server).subtract(before);
-                    helper.assertTrue(refund.equals(BigInteger.valueOf(5 * 8192 + 2048)),
-                            "Inventory and ender chest should be refunded at full EMC (43008), got " + refund);
+                    BigInteger credit = WorldEmc.balance(server).subtract(before);
+                    helper.assertTrue(credit.equals(BigInteger.valueOf(5 * 8192 + 2048)),
+                            "Inventory and ender chest should be credited at full EMC (43008), got " + credit);
                     PrestigeGameTests.assertHoldsOnlyOneTablet(helper, back);
                     helper.assertTrue(back.getEnderChestInventory().isEmpty(), "The ender chest should be wiped");
                     RunArea area = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area"));
@@ -71,7 +71,7 @@ public class MissedPrestigeGameTests {
 
             ServerPlayer back = rejoin(helper, "regular", leave(player));
 
-            helper.assertTrue(WorldEmc.balance(server).equals(before), "Nothing should be refunded, balance changed by "
+            helper.assertTrue(WorldEmc.balance(server).equals(before), "Nothing should be credited, balance changed by "
                     + WorldEmc.balance(server).subtract(before));
             helper.assertTrue(back.getInventory().countItem(Items.DIAMOND) == 5, "The inventory should be kept");
             helper.assertTrue(back.getEnderChestInventory().countItem(Items.GOLD_INGOT) == 1, "The ender chest should be kept");

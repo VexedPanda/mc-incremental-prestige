@@ -8,13 +8,19 @@ import static io.github.vexedpanda.mcincremental.prestige.gametest.PrestigeSweep
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
 
+import com.gregtechceu.gtceu.api.capability.GTCapabilityHelper;
+import com.gregtechceu.gtceu.api.capability.IEnergyContainer;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine;
+import com.gregtechceu.gtceu.api.machine.trait.recipe.RecipeLogic;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
+import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -23,6 +29,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -38,10 +45,10 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * The Prestige sweep of GregTech machines and a formed GT multiblock (VexedPanda/Mc-incremental#30). GregTech is a
- * dev-run-only dependency (build.gradle): these tests live in the test source set, which alone compiles against GT's
- * API, and they use it only to face the controller and check that the structure formed. Contents go in through NeoForge
- * capabilities, as a pipe would. Block EMC values are pinned in
+ * The Prestige sweep of GregTech machines, a formed GT multiblock and a GT recipe in progress
+ * (VexedPanda/Mc-incremental#30). GregTech is optional at runtime (build.gradle), so tests that use its API live in the
+ * test source set; they use it to face the controller, check that the structure formed, and power and tick a machine
+ * through a recipe. Contents go in through NeoForge capabilities, as a pipe would. Block EMC values are pinned in
  * {@code src/test/resources/.../pe_custom_conversions/gametest.json}; fluid values in {@code fluid_emc/gametest.json}.
  */
 @GameTestHolder(McIncrementalPrestige.MODID)
@@ -51,7 +58,7 @@ public class GregTechSweepGameTests {
             INPUT_BUS = 600, OUTPUT_BUS = 700, INPUT_HATCH = 800, ELECTRIC_FURNACE = 900;
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_gt_multiblock", timeoutTicks = 1200)
-    public static void formedElectricBlastFurnaceIsRefundedWholeWithItsBusesAndHatches(GameTestHelper helper) {
+    public static void formedElectricBlastFurnaceIsCreditedWholeWithItsBusesAndHatches(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -91,7 +98,7 @@ public class GregTechSweepGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_gt_machine", timeoutTicks = 1200)
-    public static void gtMachineContentsAreRefunded(GameTestHelper helper) {
+    public static void gtMachineContentsAreCredited(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -113,6 +120,119 @@ public class GregTechSweepGameTests {
                     assertCredited(helper, before, ELECTRIC_FURNACE + 5 * 256L);
                 }))
                 .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_gt_recipe_in_progress", timeoutTicks = 1200)
+    public static void inputsAGtMachineConsumedForItsUnfinishedRecipeAreCredited(GameTestHelper helper) {
+        withLoadedAlloySmelter(helper, (level, pos) -> {
+            long smelter = insertBronzeInputs(helper, level, pos);
+            RecipeLogic logic = GTCapabilityHelper.getRecipeLogic(level, pos, null);
+            runUntil(helper, level, pos, () -> logic.isWorking() && logic.getProgress() > 0,
+                    "The alloy smelter should start making bronze");
+            helper.assertTrue(logic.getProgress() < logic.getDuration(), "The recipe should still be running");
+            BigInteger before = WorldEmc.balance(level.getServer());
+
+            PrestigeGameTests.runPrestigeCommand(helper);
+
+            helper.assertTrue(level.getBlockState(pos).isAir(), "The alloy smelter should be swept");
+            // The smelter, plus the 3 copper ingots (128 each) and tin ingot (256) its recipe took out of its slots
+            // when it started.
+            assertCredited(helper, before, smelter + 3 * 128 + 256);
+        });
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_gt_recipe_finished", timeoutTicks = 1200)
+    public static void inputsOfAFinishedGtRecipeAreNotCreditedAgain(GameTestHelper helper) {
+        withLoadedAlloySmelter(helper, (level, pos) -> {
+            long smelter = insertBronzeInputs(helper, level, pos);
+            RecipeLogic logic = GTCapabilityHelper.getRecipeLogic(level, pos, null);
+            runUntil(helper, level, pos, () -> logic.isWorking() && logic.getProgress() > 0,
+                    "The alloy smelter should start making bronze");
+            // Skip to the end of the recipe, then let it finish; GT keeps its record of the consumed inputs.
+            logic.setProgress(logic.getDuration() - 1);
+            runUntil(helper, level, pos, () -> !logic.isWorking(), "The bronze recipe should finish");
+            Item bronze = BuiltInRegistries.ITEM.get(ResourceLocation.parse("gtceu:bronze_ingot"));
+            long bronzeEmc = 4 * IEMCProxy.INSTANCE.getValue(bronze);
+            helper.assertTrue(bronzeEmc > 0, "Bronze needs EMC for this test to mean anything");
+            BigInteger before = WorldEmc.balance(level.getServer());
+
+            PrestigeGameTests.runPrestigeCommand(helper);
+
+            // The smelter and the 4 bronze ingots it made; not the copper and tin the finished recipe used.
+            assertCredited(helper, before, smelter + bronzeEmc);
+        });
+    }
+
+    /**
+     * Starts a Run, places an LV alloy smelter in it, and runs {@code body} with it a tick later: a GT machine finds
+     * its recipes only once its block entity has loaded, which happens on the level's next block entity tick.
+     */
+    private static void withLoadedAlloySmelter(GameTestHelper helper, BiConsumer<ServerLevel, BlockPos> body) {
+        GameTests.rebuildEmcMap(helper);
+        Runnable[] restoreWorld = new Runnable[1];
+        BlockPos[] pos = new BlockPos[1];
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> {
+                    restoreWorld[0] = PrestigeGameTests.saveWorld(helper);
+                    try {
+                        RunArea area = startRun(helper);
+                        pos[0] = surface(helper, area);
+                        level(helper).setBlockAndUpdate(pos[0], gt("lv_alloy_smelter").defaultBlockState());
+                    } catch (RuntimeException e) {
+                        restoreWorld[0].run();
+                        throw e;
+                    }
+                })
+                .thenIdle(2)
+                .thenExecute(() -> {
+                    try {
+                        body.accept(level(helper), pos[0]);
+                    } finally {
+                        restoreWorld[0].run();
+                    }
+                })
+                .thenSucceed();
+    }
+
+    /**
+     * Inserts exactly one bronze recipe's inputs (3 copper ingots, 1 tin ingot) into the alloy smelter at {@code pos},
+     * as a pipe would, and returns the smelter's EMC.
+     */
+    private static long insertBronzeInputs(GameTestHelper helper, ServerLevel level, BlockPos pos) {
+        long smelter = IEMCProxy.INSTANCE.getValue(gt("lv_alloy_smelter").asItem());
+        helper.assertTrue(smelter > 0, "The alloy smelter needs EMC for this test to mean anything");
+        helper.assertTrue(IEMCProxy.INSTANCE.getValue(Items.COPPER_INGOT) == 128, "Copper ingots should be worth 128");
+        Item tin = BuiltInRegistries.ITEM.get(ResourceLocation.parse("gtceu:tin_ingot"));
+        helper.assertTrue(IEMCProxy.INSTANCE.getValue(tin) == 256, "Tin ingots should be worth 256");
+        IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        for (ItemStack stack : List.of(new ItemStack(Items.COPPER_INGOT, 3), new ItemStack(tin))) {
+            ItemStack rest = ItemHandlerHelper.insertItem(handler, stack, false);
+            helper.assertTrue(rest.isEmpty(), "The alloy smelter should take " + stack + ", left " + rest);
+        }
+        return smelter;
+    }
+
+    /**
+     * Ticks the GT machine at {@code pos} (keeping it powered) until {@code done}, at most 400 ticks. Ticked directly,
+     * so it doesn't depend on the chunk ticking.
+     */
+    private static void runUntil(GameTestHelper helper, ServerLevel level, BlockPos pos, BooleanSupplier done, String what) {
+        IEnergyContainer energy = GTCapabilityHelper.getEnergyContainer(level, pos, null);
+        RecipeLogic logic = GTCapabilityHelper.getRecipeLogic(level, pos, null);
+        helper.assertTrue(energy != null && logic != null, "No GT energy container or recipe logic at " + pos);
+        for (int tick = 0; tick < 400 && !done.getAsBoolean(); tick++) {
+            energy.addEnergy(energy.getEnergyCanBeInserted());
+            logic.serverTick();
+        }
+        if (!done.getAsBoolean()) {
+            IItemHandler items = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+            List<ItemStack> slots = new ArrayList<>();
+            for (int slot = 0; slot < items.getSlots(); slot++) slots.add(items.getStackInSlot(slot));
+            helper.fail(what + " (status " + logic.getStatus() + ", progress " + logic.getProgress() + "/"
+                    + logic.getDuration() + ", energy " + energy.getEnergyStored() + "/" + energy.getEnergyCapacity()
+                    + ", failure " + logic.getBestFailureReason() + ", slots " + slots + ")");
+        }
     }
 
     /**

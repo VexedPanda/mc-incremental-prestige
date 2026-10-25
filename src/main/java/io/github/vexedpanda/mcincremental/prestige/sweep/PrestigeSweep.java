@@ -9,8 +9,8 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
+import io.github.vexedpanda.mcincremental.prestige.emc.ItemEmc;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
-import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.MinecraftServer;
@@ -53,9 +53,9 @@ public final class PrestigeSweep {
 
     /**
      * Sweeps the Run area the world's snapshot is of, then discards the snapshot, so a Run is swept at most once. Does
-     * nothing when there is no snapshot. Doesn't credit anything: the caller credits the returned {@link Refund}.
+     * nothing when there is no snapshot. Doesn't credit anything: the caller credits the returned {@link EmcCredit}.
      *
-     * <p>Runs in phases, each finishing before the next starts, so a multiblock is refunded whole: nothing is removed
+     * <p>Runs in phases, each finishing before the next starts, so a multiblock is credited whole: nothing is removed
      * (which could drop, void or break-trigger a neighbour's contents) until every inventory has been drained.
      * <ol>
      *   <li>collect: every position whose Block differs from the snapshot;
@@ -69,39 +69,39 @@ public final class PrestigeSweep {
      *
      * @return the EMC value of everything swept, items and fluids
      */
-    public static Refund sweep(MinecraftServer server) {
-        Refund refund = new Refund();
+    public static EmcCredit sweep(MinecraftServer server) {
+        EmcCredit credit = new EmcCredit();
         RunSnapshotData snapshot = RunSnapshotData.get(server);
         RunArea area = snapshot.area;
-        if (area == null) return refund;
+        if (area == null) return credit;
         ServerLevel level = server.overworld();
 
         List<BlockPos> changed = changedPositions(level, snapshot, area);
         Set<BlockPos> changedSet = new HashSet<>(changed);
         for (BlockEntity blockEntity : blockEntities(level, snapshot, area)) {
             BlockPos pos = blockEntity.getBlockPos();
-            SweptContents.drain(level, pos, blockEntity, changedSet.contains(pos), refund);
+            SweptContents.drain(level, pos, blockEntity, changedSet.contains(pos), credit);
         }
         for (BlockPos pos : changed) {
-            if (level.getBlockEntity(pos) == null) SweptContents.drain(level, pos, null, true, refund);
+            if (level.getBlockEntity(pos) == null) SweptContents.drain(level, pos, null, true, credit);
         }
         List<BlockPos> swept = new ArrayList<>();
         for (BlockPos pos : changed) {
             BlockState state = level.getBlockState(pos);
             BlockEntity blockEntity = level.getBlockEntity(pos);
-            long value = value(level, pos, state, blockEntity);
+            BigInteger value = value(level, pos, state, blockEntity);
             FluidState fluid = state.getFluidState();
             boolean valuedSource = fluid.isSource() && FluidEmc.hasValue(fluid.getType());
-            if (value <= 0 && blockEntity == null && !valuedSource) continue;
-            refund.addEmc(value);
-            if (valuedSource) refund.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
+            if (value.signum() <= 0 && blockEntity == null && !valuedSource) continue;
+            credit.addEmc(value);
+            if (valuedSource) credit.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
             swept.add(pos);
         }
         for (BlockPos pos : swept) remove(level, pos);
-        sweepFluidSources(level, changed, refund);
-        refund.addEmc(sweepEntities(level, snapshot, area));
+        sweepFluidSources(level, changed, credit);
+        credit.addEmc(sweepEntities(level, snapshot, area));
         snapshot.clear();
-        return refund;
+        return credit;
     }
 
     /** Every block entity in the swept chunks, in any order; a copy, so removing them while iterating is safe. */
@@ -123,25 +123,25 @@ public final class PrestigeSweep {
     }
 
     /**
-     * Refunds and removes the changed positions still holding a fluid source with an EMC value ({@link FluidEmc}), such
+     * Credits and removes the changed positions still holding a fluid source with an EMC value ({@link FluidEmc}), such
      * as lava leaked into the margin. Runs after the remove phase, reading the live world, so a position an earlier
      * phase already swept (now air) is never credited twice. The value phase already takes every changed valued source
      * it sees, so this only catches a source that appeared since (a neighbour's removal can't create one: removal sends
      * no updates). A source block is 1000 mB.
      */
-    private static void sweepFluidSources(ServerLevel level, List<BlockPos> changed, Refund refund) {
+    private static void sweepFluidSources(ServerLevel level, List<BlockPos> changed, EmcCredit credit) {
         for (BlockPos pos : changed) {
             FluidState fluid = level.getFluidState(pos);
             if (!fluid.isSource() || !FluidEmc.hasValue(fluid.getType())) continue;
-            refund.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
+            credit.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
             remove(level, pos);
         }
     }
 
     /**
-     * Refunds and removes entities in the swept chunks (entities phase, #31): every dropped item, whenever it appeared,
+     * Credits and removes entities in the swept chunks (entities phase, #31): every dropped item, whenever it appeared,
      * and every other entity holding value (item form plus contents) that wasn't there at Run start, such as a chest
-     * minecart, item frame or armor stand placed during the Run. Returns the EMC refunded.
+     * minecart, item frame or armor stand placed during the Run. Returns the EMC credited.
      */
     private static BigInteger sweepEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
         // Entities are only seen in accessible chunks: hold the swept chunks ticking while collecting them.
@@ -155,17 +155,17 @@ public final class PrestigeSweep {
         BigInteger total = BigInteger.ZERO;
         for (Entity entity : inBox) {
             if (entity.isRemoved()) continue;
-            long value;
+            BigInteger value;
             if (entity instanceof ItemEntity item) {
-                value = emc(item.getItem());
+                value = ItemEmc.stackValue(item.getItem());
             } else {
                 if (snapshot.entities.contains(entity.getUUID()) || !isSweepable(entity)) continue;
                 value = entityValue(entity);
-                if (value <= 0) continue;
-                // Discarding a container entity spills its contents: they are refunded, so empty it first.
+                if (value.signum() <= 0) continue;
+                // Discarding a container entity spills its contents: they are credited, so empty it first.
                 if (entity instanceof Container container) container.clearContent();
             }
-            total = total.add(BigInteger.valueOf(value));
+            total = total.add(value);
             entity.discard();
         }
         return total;
@@ -181,24 +181,22 @@ public final class PrestigeSweep {
     }
 
     /** An entity's EMC: its item form plus everything it holds. */
-    private static long entityValue(Entity entity) {
-        long value;
+    private static BigInteger entityValue(Entity entity) {
         if (entity instanceof ItemFrame frame) {
             // An item frame's pick result is its framed item when it has one.
-            value = emc(new ItemStack(frame instanceof GlowItemFrame ? Items.GLOW_ITEM_FRAME : Items.ITEM_FRAME));
-            value += emc(frame.getItem());
-            return value;
+            return ItemEmc.stackValue(new ItemStack(frame instanceof GlowItemFrame ? Items.GLOW_ITEM_FRAME : Items.ITEM_FRAME))
+                    .add(ItemEmc.stackValue(frame.getItem()));
         }
         ItemStack form = entity.getPickResult();
-        value = form == null ? 0 : emc(form);
+        BigInteger value = form == null ? BigInteger.ZERO : ItemEmc.stackValue(form);
         if (entity instanceof Container container) {
-            for (int slot = 0; slot < container.getContainerSize(); slot++) value += emc(container.getItem(slot));
+            for (int slot = 0; slot < container.getContainerSize(); slot++) value = value.add(ItemEmc.stackValue(container.getItem(slot)));
         } else if (entity instanceof ArmorStand stand) {
-            for (EquipmentSlot slot : EquipmentSlot.values()) value += emc(stand.getItemBySlot(slot));
+            for (EquipmentSlot slot : EquipmentSlot.values()) value = value.add(ItemEmc.stackValue(stand.getItemBySlot(slot)));
         } else {
             IItemHandler items = entity.getCapability(Capabilities.ItemHandler.ENTITY);
             if (items != null) {
-                for (int slot = 0; slot < items.getSlots(); slot++) value += emc(items.getStackInSlot(slot));
+                for (int slot = 0; slot < items.getSlots(); slot++) value = value.add(ItemEmc.stackValue(items.getStackInSlot(slot)));
             }
         }
         return value;
@@ -251,17 +249,13 @@ public final class PrestigeSweep {
      * A block's full EMC value through ProjectE: its item form first (which includes values set on the item, e.g.
      * hand-made GT EMC), then its pick-block stack, then its drops.
      */
-    static long value(ServerLevel level, BlockPos pos, BlockState state, @Nullable BlockEntity blockEntity) {
-        long value = emc(new ItemStack(state.getBlock().asItem()));
-        if (value > 0) return value;
-        value = emc(state.getBlock().getCloneItemStack(level, pos, state));
-        if (value > 0) return value;
-        long drops = 0;
-        for (ItemStack drop : Block.getDrops(state, level, pos, blockEntity)) drops += emc(drop);
+    static BigInteger value(ServerLevel level, BlockPos pos, BlockState state, @Nullable BlockEntity blockEntity) {
+        BigInteger value = ItemEmc.stackValue(new ItemStack(state.getBlock().asItem()));
+        if (value.signum() > 0) return value;
+        value = ItemEmc.stackValue(state.getBlock().getCloneItemStack(level, pos, state));
+        if (value.signum() > 0) return value;
+        BigInteger drops = BigInteger.ZERO;
+        for (ItemStack drop : Block.getDrops(state, level, pos, blockEntity)) drops = drops.add(ItemEmc.stackValue(drop));
         return drops;
-    }
-
-    private static long emc(ItemStack stack) {
-        return stack.isEmpty() ? 0 : IEMCProxy.INSTANCE.getValue(stack) * stack.getCount();
     }
 }

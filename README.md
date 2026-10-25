@@ -1,6 +1,6 @@
 # Mc-incremental Prestige
 
-The Prestige mod for [Mc-incremental](https://github.com/VexedPanda/Mc-incremental), a Minecraft modpack played as an incremental game. Each Run is confined to a small Run area of an ordinary world. A Prestige ends the Run, refunds everything the players built as EMC, and starts a fresh Run somewhere new. The world keeps its Knowledge and EMC balance.
+The Prestige mod for [Mc-incremental](https://github.com/VexedPanda/Mc-incremental), a Minecraft modpack played as an incremental game. Each Run is confined to a small Run area of an ordinary world. A Prestige ends the Run, converts everything the players built into EMC, and starts a fresh Run somewhere new. The world keeps its Knowledge and EMC balance.
 
 NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-mods/projecte); GregTech CEu is optional.
 
@@ -12,11 +12,11 @@ NeoForge 1.21.1. It requires [ProjectE](https://www.curseforge.com/minecraft/mc-
   - machine, chest and tank contents, drained before any block is removed;
   - placed fluids, dropped items, minecarts and item frames;
   - ender chests.
-- **World-global EMC and Knowledge:** shared by every player, with no owners. Players who were offline during a Prestige are refunded and moved when they next join.
+- **World-global EMC and Knowledge:** shared by every player, with no owners. Players who were offline during a Prestige have their items converted to EMC and are moved when they next join.
 - **EMC barrel:** a block linked to the world's EMC balance. It hands out one configured learned item or fluid, and turns anything piped in into EMC.
 - **Starting items:** every Run, and every join, makes sure players hold the configured starting items (by default a Transmutation Tablet).
 - **Singleplayer performance:** the simulation distance is capped to the Run area.
-- **GregTech EMC values:** when GregTech is installed, a ProjectE EMC mapper values GT items from their GT machine recipes (inputs' cost, fluids at their `fluid_emc` values), so machines, circuits and parts can be transmuted and refunded. Leaf materials no recipe makes (sulfur, titanium, ...) still need a price in ProjectE's `custom_emc.json`. Exclusions are listed in `GtRecipeEmcMapper`; ProjectE's `config/ProjectE/mapping.toml` can turn it off (`mappers.GTRecipeMapper.enabled`).
+- **GregTech EMC values:** when GregTech is installed, a ProjectE EMC mapper values GT items from their GT machine recipes (inputs' cost, fluids at their `fluid_emc` values; an unlisted fluid, such as a molten metal, at the value its own GT recipes give it), so machines, circuits and parts can be transmuted, and the Prestige sweep converts them back into EMC. Leaf materials no recipe makes (sulfur, titanium, ...) still need a price in ProjectE's `custom_emc.json`. Exclusions are listed in `GtRecipeEmcMapper`; ProjectE's `config/ProjectE/mapping.toml` can turn it off (`mappers.GTRecipeMapper.enabled`).
 
 Design notes: [`docs/prestige-sweep.md`](docs/prestige-sweep.md), [`docs/emc-barrel.md`](docs/emc-barrel.md), [`docs/simulation-distance.md`](docs/simulation-distance.md). The vocabulary and design decisions live in the pack repo's `GLOSSARY.md` and `docs/adr/`.
 

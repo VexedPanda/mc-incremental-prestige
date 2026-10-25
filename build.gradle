@@ -168,9 +168,10 @@ dependencies {
     compileOnly  '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
     localRuntime '6611:984:ProjectE-1.21.1-PE1.1.0@jar'
 
-    // GregTech (the Pack's pinned build). The sweep must refund GT machines and multiblocks, and the GT GameTests
+    // GregTech (the Pack's pinned build). The sweep must credit GT machines and multiblocks, and the GT GameTests
     // (src/test/java) form real GT structures. The mod compiles against GT only for its GT recipe EMC mapper
-    // (emc/gt), which ProjectE loads only when gtceu is installed, so the mod still runs without GT; GT is loaded in
+    // (emc/gt), which ProjectE loads only when gtceu is installed, and for the inputs of a GT recipe in progress
+    // (sweep/gt), called only when gtceu is loaded, so the mod still runs without GT; GT is loaded in
     // dev runs (localRuntime is not published). GT's own dependencies (Configuration, Registrate, ModularUI) are
     // jar-in-jars of this jar.
     compileOnly      gregtech
