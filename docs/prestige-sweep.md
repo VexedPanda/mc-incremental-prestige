@@ -4,7 +4,7 @@ Design decision: pack repo ADR-0007 (diff against a snapshot taken at Run start)
 
 ## Run start
 
-1. Pick the Run area; force-load it plus a one-chunk margin (5×5) with a ticket.
+1. Pick the Run area; force-load it plus the sweep margin (server config `runArea.sweepMarginChunks`, default 1: 5×5 around the default 3×3) with a ticket.
 2. Wait until the 3×3 is **ticking** (`ServerChunkCache.isPositionTicking`), not just FULL: `postProcessGeneration()` (fence shapes, spring fluid ticks) runs in `ChunkMap.prepareTickingChunk`.
 3. Snapshot, then teleport the player.
 
@@ -35,7 +35,7 @@ A `LevelChunk.setBlockState` mixin setting dirty-section bits as a pre-filter, n
 
 ## Implementation (#29)
 
-- `sweep.RunSnapshots.take(server, area)`: Run start, called by `controller.Prestige.run` after `RunAreas.beginRun`. Adds a region ticket, drives chunk loading on the server thread until the 5×5 is ticking (60 s timeout), copies every section, removes the ticket. The snapshot lives in one `SavedData` (`mcincremental_prestige_run_snapshot`), saved with the vanilla section codec.
+- `sweep.RunSnapshots.take(server, area)`: Run start, called by `controller.Prestige.run` after `RunAreas.beginRun`. Adds a region ticket, drives chunk loading on the server thread until the area plus margin (5×5 by default) is ticking (60 s timeout), copies every section, removes the ticket. The snapshot lives in one `SavedData` (`mcincremental_prestige_run_snapshot`), saved with the vanilla section codec.
 - `sweep.PrestigeSweep.sweep(server)`: phases collect → drain all block entities (#30) → value → remove → entities (#31), then clears the snapshot. Returns the EMC; `Prestige.run` credits it via `WorldEmc.addEmc`. It sweeps the 3×3 only (`PrestigeSweep.MARGIN_CHUNKS = 0`) until #31.
 - No fast path for identical sections beyond skipping all-air live sections: the per-block compare costs a few ms for 9 chunks.
 - ProjectE's `OreBlacklistMapper` (on by default, a ProjectE mapping config option) sets everything in `c:ores` to 0 EMC, overriding even `/projecte setemc`, so placed ores are never swept. GT ore EMC needs that mapper turned off in the pack.

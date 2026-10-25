@@ -24,12 +24,18 @@ final class RunAreaData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         tag.putLongArray("visited", visited.stream().mapToLong(a -> a.centre().toLong()).toArray());
+        tag.putIntArray("radii", visited.stream().mapToInt(RunArea::radiusChunks).toArray());
         return tag;
     }
 
     private static RunAreaData load(CompoundTag tag, HolderLookup.Provider registries) {
         RunAreaData data = new RunAreaData();
-        for (long centre : tag.getLongArray("visited")) data.visited.add(new RunArea(new ChunkPos(centre)));
+        long[] centres = tag.getLongArray("visited");
+        int[] radii = tag.getIntArray("radii");
+        // Worlds saved before the radius was configurable have no radii: their areas were all radius 1.
+        for (int i = 0; i < centres.length; i++) {
+            data.visited.add(new RunArea(new ChunkPos(centres[i]), i < radii.length ? radii[i] : 1));
+        }
         return data;
     }
 }
