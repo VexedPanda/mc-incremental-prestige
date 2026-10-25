@@ -1,0 +1,19 @@
+{
+  "comment": "GameTest-only fluid EMC values for the GT recipe EMC mapper tests (never in the jar). The fuels and oils have the Pack's values (pack kubejs/data/mcincremental_prestige/fluid_emc/fluids.json); gases GT makes from air or water are free (0); chlorine has a price. Molten red alloy is cheap on purpose (144 per 144 mB ingot, below the alloy smelter's 384), so a red alloy ingot's value shows the solidifier recipe used this explicit fluid value.",
+  "emc_per_1000_mb": {
+    "gtceu:oxygen": 0,
+    "gtceu:hydrogen": 0,
+    "gtceu:nitrogen": 0,
+    "gtceu:air": 0,
+    "gtceu:argon": 0,
+    "gtceu:chlorine": 256,
+    "gtceu:red_alloy": 1000,
+    "gtceu:creosote": 32,
+    "gtceu:seed_oil": 16,
+    "gtceu:ethanol": 64,
+    "gtceu:oil": 256,
+    "gtceu:natural_gas": 256,
+    "gtceu:diesel": 768,
+    "gtceu:gasoline": 1024
+  }
+}
