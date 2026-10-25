@@ -3,6 +3,7 @@ package io.github.vexedpanda.mcincremental.prestige.gametest;
 import java.math.BigInteger;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrelBlockEntity;
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrels;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import moze_intel.projecte.api.proxy.IEMCProxy;
@@ -17,6 +18,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -108,6 +110,14 @@ public class EmcBarrelGameTests {
                         configure(helper, Items.COAL);
                         helper.assertTrue(barrel.getStackInSlot(0).is(Items.COAL), "A learned item should be configured, barrel shows "
                                 + barrel.getStackInSlot(0));
+
+                        // The setting survives the barrel being saved and reloaded (chunk unload, restart).
+                        var level = helper.getLevel();
+                        BlockPos pos = helper.absolutePos(BARREL);
+                        var tag = level.getBlockEntity(pos).saveWithFullMetadata(level.registryAccess());
+                        var reloaded = BlockEntity.loadStatic(pos, level.getBlockState(pos), tag, level.registryAccess());
+                        helper.assertTrue(reloaded instanceof EmcBarrelBlockEntity b && b.configuredItem() != null
+                                && b.configuredItem().createStack().is(Items.COAL), "A reloaded barrel should still hand out coal");
                     });
                 })
                 .thenSucceed();
