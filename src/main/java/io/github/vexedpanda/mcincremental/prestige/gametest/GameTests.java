@@ -21,7 +21,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -113,5 +118,26 @@ public final class GameTests {
     /** {@link #newPlayer} then {@link #join}. */
     public static ServerPlayer joinedPlayer(GameTestHelper helper, String name) {
         return join(helper, newPlayer(helper, name));
+    }
+
+    /** Ticks a hopper needs to push 5 items (one per 8 ticks), with room to spare. */
+    public static final int HOPPER_TICKS = 80;
+
+    /** Places a hopper above {@code target} (it pushes down into it) holding {@code contents}. */
+    public static void placeHopperAbove(GameTestHelper helper, BlockPos target, ItemStack contents) {
+        BlockPos pos = target.above();
+        helper.setBlock(pos, Blocks.HOPPER);
+        helper.assertTrue(helper.getBlockEntity(pos) instanceof HopperBlockEntity, "A hopper should be placed");
+        ((HopperBlockEntity) helper.getBlockEntity(pos)).setItem(0, contents);
+    }
+
+    /** How many of {@code item} the hopper at {@code pos} holds. */
+    public static int hopperCount(GameTestHelper helper, BlockPos pos, Item item) {
+        HopperBlockEntity hopper = (HopperBlockEntity) helper.getBlockEntity(pos);
+        int count = 0;
+        for (int slot = 0; slot < hopper.getContainerSize(); slot++) {
+            if (hopper.getItem(slot).is(item)) count += hopper.getItem(slot).getCount();
+        }
+        return count;
     }
 }

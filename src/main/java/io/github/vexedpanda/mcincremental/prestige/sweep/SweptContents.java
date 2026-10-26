@@ -6,6 +6,7 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrelBlockEntity;
+import io.github.vexedpanda.mcincremental.prestige.intake.EmcIntakeBlockEntity;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import io.github.vexedpanda.mcincremental.prestige.sweep.gt.GtRecipesInProgress;
 import net.minecraft.core.BlockPos;
@@ -37,8 +38,8 @@ import net.neoforged.neoforge.items.wrapper.InvWrapper;
  * keeps it and nothing is credited. The same goes for the inputs a GregTech machine consumed for a recipe it hasn't
  * finished ({@link GtRecipesInProgress}, only with GregTech installed).
  *
- * <p>Skipped entirely: unrolled loot containers (reading them would roll the loot) and EMC barrels (their handlers are
- * the world balance itself, docs/emc-barrel.md).
+ * <p>Skipped entirely: unrolled loot containers (reading them would roll the loot), EMC barrels and EMC intakes (their
+ * handlers are the world balance itself and hold nothing, docs/emc-barrel.md, docs/emc-intake.md).
  */
 final class SweptContents {
     /** Guards against handlers that never run dry (creative sources): extractions per slot or tank. */
@@ -54,7 +55,7 @@ final class SweptContents {
      * @param removed whether the sweep removes the block afterwards, so anything that can't be taken out is lost with it
      */
     static void drain(ServerLevel level, BlockPos pos, @Nullable BlockEntity blockEntity, boolean removed, EmcCredit credit) {
-        if (blockEntity instanceof EmcBarrelBlockEntity) return;
+        if (blockEntity instanceof EmcBarrelBlockEntity || blockEntity instanceof EmcIntakeBlockEntity) return;
         if (blockEntity instanceof RandomizableContainerBlockEntity loot && loot.getLootTable() != null) return;
         BlockState state = level.getBlockState(pos);
         List<IItemHandler> items = blockEntity instanceof ChestBlockEntity chest
