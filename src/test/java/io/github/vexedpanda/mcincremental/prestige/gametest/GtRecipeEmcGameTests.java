@@ -310,8 +310,8 @@ public class GtRecipeEmcGameTests {
                 .thenSucceed();
     }
 
-    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "gt_derived_fluid_barrel", timeoutTicks = 600)
-    public static void anUnlistedFluidIsWorthWhatItsRecipeCostsInTheBarrel(GameTestHelper helper) {
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "gt_derived_fluid_intake", timeoutTicks = 600)
+    public static void anUnlistedFluidIsWorthWhatItsRecipeCostsInTheIntake(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         MinecraftServer server = helper.getLevel().getServer();
         helper.startSequence()
@@ -324,12 +324,12 @@ public class GtRecipeEmcGameTests {
                     long dust = emc(helper, "gtceu:copper_dust");
                     helper.assertTrue(value > 0 && value <= dust * 1000 / 144, "Molten copper should be worth what its recipe "
                             + "costs, at most " + dust * 1000 / 144 + " per 1000 mB, got " + value);
-                    IFluidHandler barrel = EmcBarrelFluidGameTests.placeBarrel(helper);
+                    IFluidHandler intake = EmcIntakeGameTests.placeIntakeTank(helper, new BlockPos(1, 1, 1));
                     BigInteger before = EmcBarrelFluidGameTests.milliBalance(server);
 
-                    int filled = barrel.fill(new FluidStack(copper, 144), IFluidHandler.FluidAction.EXECUTE);
+                    int filled = intake.fill(new FluidStack(copper, 144), IFluidHandler.FluidAction.EXECUTE);
 
-                    helper.assertTrue(filled == 144, "The barrel should take a dust's 144 mB of molten copper, took " + filled);
+                    helper.assertTrue(filled == 144, "The intake should take a dust's 144 mB of molten copper, took " + filled);
                     EmcBarrelFluidGameTests.assertMilliDelta(helper, server, before, value * 144, "after inserting 144 mB of molten copper");
                 })
                 .thenSucceed();

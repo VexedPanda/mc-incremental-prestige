@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "mcincremental_prestige:block/emc_intake_top",
+    "bottom": "mcincremental_prestige:block/emc_intake_bottom",
+    "side": "mcincremental_prestige:block/emc_intake_side"
+  }
+}

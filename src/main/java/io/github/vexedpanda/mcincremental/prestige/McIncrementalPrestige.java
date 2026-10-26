@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrels;
+import io.github.vexedpanda.mcincremental.prestige.intake.EmcIntakes;
 import io.github.vexedpanda.mcincremental.prestige.controller.MissedPrestige;
 import io.github.vexedpanda.mcincremental.prestige.controller.PrestigeItems;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreaConfig;
@@ -21,6 +22,7 @@ public class McIncrementalPrestige {
 
     public McIncrementalPrestige(IEventBus modEventBus, ModContainer modContainer) {
         EmcBarrels.register(modEventBus);
+        EmcIntakes.register(modEventBus);
         PrestigeItems.register(modEventBus);
         MissedPrestige.register(modEventBus);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);

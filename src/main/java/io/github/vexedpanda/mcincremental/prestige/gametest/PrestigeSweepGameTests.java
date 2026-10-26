@@ -6,6 +6,7 @@ import java.util.Optional;
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrelBlockEntity;
 import io.github.vexedpanda.mcincremental.prestige.barrel.EmcBarrels;
+import io.github.vexedpanda.mcincremental.prestige.intake.EmcIntakes;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
@@ -186,6 +187,29 @@ public class PrestigeSweepGameTests {
                     helper.assertTrue(level.getBlockState(pos).isAir(), "The barrel should be swept, found "
                             + level.getBlockState(pos));
                     assertCredited(helper, before, barrelEmc);
+                }))
+                .thenSucceed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_intake", timeoutTicks = 400)
+    public static void emcIntakeIsSweptAtTheBlocksValue(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> PrestigeGameTests.withWorldRestored(helper, () -> {
+                    long intakeEmc = IEMCProxy.INSTANCE.getValue(EmcIntakes.ITEM.get());
+                    helper.assertTrue(intakeEmc > 0, "The EMC intake needs an EMC value for this test to mean anything");
+                    BlockPos pos = surface(helper, startRun(helper));
+                    ServerLevel level = level(helper);
+                    level.setBlockAndUpdate(pos, EmcIntakes.BLOCK.get().defaultBlockState());
+                    BigInteger before = WorldEmc.balance(server);
+
+                    PrestigeGameTests.runPrestigeCommand(helper);
+
+                    helper.assertTrue(level.getBlockState(pos).isAir(), "The intake should be swept, found "
+                            + level.getBlockState(pos));
+                    assertCredited(helper, before, intakeEmc);
                 }))
                 .thenSucceed();
     }

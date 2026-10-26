@@ -24,7 +24,7 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * An EMC barrel: linked to the world's EMC balance and Knowledge (ADR-0004, no owner), configured to hand out one
- * learned item or one learned fluid (configuring one clears the other). It stores no items, fluid or EMC itself; the
+ * learned item or one learned fluid (configuring one clears the other). It only outputs; the EMC intake is the way in. It stores no items, fluid or EMC itself; the
  * capabilities registered in {@link EmcBarrels} do all the work against {@link WorldEmc}, so it works with no player
  * online.
  */

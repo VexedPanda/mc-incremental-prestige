@@ -22,7 +22,8 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * The EMC barrel's fluid side, driven through its fluid handler capability and by using the block with a bucket.
+ * The EMC barrel's fluid side, driven through its fluid handler capability and by using the block with a bucket (the
+ * EMC intake fills the world balance where a test needs it).
  * Fluid values come from the GameTest-only datapack file ({@link FluidEmcGameTests}): lava is worth 1500 per 1000 mB
  * (1.5 EMC per mB), water is unmapped. Balances are compared in thousandths of an EMC (whole balance plus the world's
  * fractional EMC), since a mB of lava is worth a fraction. Each test has its own batch, as in
@@ -34,18 +35,17 @@ public class EmcBarrelFluidGameTests {
     private static final BlockPos BARREL = new BlockPos(1, 1, 1);
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "emc_barrel_fluid_insert")
-    public static void fluidInsertionCreditsTheExplicitValueAndLearnsTheFluid(GameTestHelper helper) {
+    public static void theBarrelRefusesEveryFluid(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
-        WorldEmc.forgetFluid(server, Fluids.LAVA);
         IFluidHandler barrel = placeBarrel(helper);
         BigInteger before = milliBalance(server);
+        FluidStack lava = new FluidStack(Fluids.LAVA, 1000);
 
-        int filled = barrel.fill(new FluidStack(Fluids.LAVA, 1001), FluidAction.EXECUTE);
+        helper.assertFalse(barrel.isFluidValid(0, lava), "The barrel should accept no fluid");
+        int filled = barrel.fill(lava, FluidAction.EXECUTE);
 
-        helper.assertTrue(filled == 1001, "Barrel should take all 1001 mB of lava, took " + filled);
-        // 1001 mB at 1500 EMC per 1000 mB = 1501.5 EMC.
-        assertMilliDelta(helper, server, before, 1_501_500, "after inserting 1001 mB of lava");
-        helper.assertTrue(WorldEmc.knowsFluid(server, Fluids.LAVA), "The world should know lava");
+        helper.assertTrue(filled == 0, "The barrel should take none of the lava, took " + filled);
+        assertMilliDelta(helper, server, before, 0, "after offering the barrel lava");
         helper.succeed();
     }
 
@@ -82,13 +82,14 @@ public class EmcBarrelFluidGameTests {
     }
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "emc_barrel_fluid_round_trip")
-    public static void fluidInsertThenExtractNetsZeroEmc(GameTestHelper helper) {
+    public static void fluidIntakeThenBarrelNetsZeroEmc(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         IFluidHandler barrel = placeBarrel(helper);
+        IFluidHandler intake = EmcIntakeGameTests.placeIntakeTank(helper, EmcBarrelGameTests.INTAKE);
         BigInteger before = milliBalance(server);
 
         // 7 mB of lava is worth 10.5 EMC: the half must come back too.
-        helper.assertTrue(barrel.fill(new FluidStack(Fluids.LAVA, 7), FluidAction.EXECUTE) == 7, "Barrel should take the lava");
+        helper.assertTrue(intake.fill(new FluidStack(Fluids.LAVA, 7), FluidAction.EXECUTE) == 7, "The intake should take the lava");
         EmcBarrelGameTests.configure(helper, Items.LAVA_BUCKET);
         FluidStack out = barrel.drain(7, FluidAction.EXECUTE);
 
@@ -133,24 +134,6 @@ public class EmcBarrelFluidGameTests {
             helper.assertTrue(barrel(helper).configuredFluid() == null && barrel.drain(1000, FluidAction.EXECUTE).isEmpty(),
                     "Configuring coal should clear the fluid");
         });
-        helper.succeed();
-    }
-
-    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "emc_barrel_fluid_reject")
-    public static void unmappedFluidsAreRejectedNotDestroyed(GameTestHelper helper) {
-        MinecraftServer server = helper.getLevel().getServer();
-        WorldEmc.forgetFluid(server, Fluids.WATER);
-        IFluidHandler barrel = placeBarrel(helper);
-        BigInteger before = milliBalance(server);
-        FluidStack water = new FluidStack(Fluids.WATER, 1000);
-
-        helper.assertFalse(barrel.isFluidValid(0, water), "Barrel should not accept water");
-        int filled = barrel.fill(water, FluidAction.EXECUTE);
-
-        helper.assertTrue(filled == 0, "Barrel should take none of the water, took " + filled);
-        helper.assertTrue(water.getAmount() == 1000, "The offered stack must not be shrunk");
-        assertMilliDelta(helper, server, before, 0, "after offering water");
-        helper.assertFalse(WorldEmc.knowsFluid(server, Fluids.WATER), "Water should not be learned");
         helper.succeed();
     }
 
