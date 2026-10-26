@@ -53,16 +53,18 @@ The private passes take about 2-3 s on top of the mapping itself; ProjectE's exp
 ## What still makes EMC
 
 The GameTest `noSplitGtRecipeMakesMoreEmcThanItConsumes` sweeps every GT recipe (the rule of the pack's
-`docs/research/emc-pricing/audit.py`) and fails if a recipe the mapper split makes EMC. It logs the worst offenders of
-each kind of recipe it leaves gaining:
+`docs/research/emc-pricing/audit.py`) and fails if a recipe split by share makes EMC. It logs the worst offenders of
+each kind of recipe that can still gain (GameTest prices: 0 split by share, 31 split with fixed values, 327 with
+pinned outputs, 440 others):
 
+- **Split with fixed values** (loops, lathes of alloys, alloy decompositions): a fixed value lags behind inputs that
+  drop in the same mapping, so these can gain up to a few hundred EMC (a few thousand at worst).
 - **Pinned outputs worth more than the inputs** (ender pearl electrolysis into pinned elements, gold pipes arc-smelted
   into pinned gold ingots once their gold is cheap): only re-pricing fixes these.
 - **Outputs valued elsewhere worth more than the inputs** (not decompositions; see 4 above), and recipes whose inputs
   have no value in the seed.
 
-A split recipe can still be a little off where a fixed value (5 above) lags behind its inputs; the sweep allows 2 EMC
-or 0.5% of the inputs for that and for rounding.
+The sweep allows 2 EMC or 0.5% of the inputs for rounding.
 
 ## Tests
 
