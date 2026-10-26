@@ -1,6 +1,5 @@
 package io.github.vexedpanda.mcincremental.prestige.barrel;
 
-import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.material.Fluid;
@@ -10,8 +9,8 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 /**
  * What pipes and machines see of an EMC barrel's fluid side; the fluid twin of {@link EmcBarrelItemHandler}. One tank
  * holding the configured fluid, as many mB as the world's balance pays for. Draining debits the fluid's EMC value
- * from the world balance, exactly (fractions of an EMC go to the world's fractional EMC, see {@link WorldEmc}). Filling with any fluid that has an EMC value ({@link FluidEmc}) credits that value to the world balance and learns
- * the fluid; fluids with no value (or with data components) are refused, never voided.
+ * from the world balance, exactly (fractions of an EMC come from the world's fractional EMC, see {@link WorldEmc}). It
+ * only outputs: every fill is refused.
  */
 final class EmcBarrelFluidHandler implements IFluidHandler {
     private final EmcBarrelBlockEntity barrel;
@@ -37,18 +36,13 @@ final class EmcBarrelFluidHandler implements IFluidHandler {
 
     @Override
     public boolean isFluidValid(int tank, FluidStack stack) {
-        return !stack.isEmpty() && stack.isComponentsPatchEmpty() && FluidEmc.hasValue(stack.getFluid());
+        return false;
     }
 
+    /** The barrel only outputs: no fluid goes in (the EMC intake converts fluids into EMC). */
     @Override
     public int fill(FluidStack resource, FluidAction action) {
-        MinecraftServer server = barrel.server();
-        if (server == null || !isFluidValid(0, resource)) return 0;
-        if (action.execute()) {
-            WorldEmc.addFluidEmc(server, resource.getFluid(), resource.getAmount());
-            WorldEmc.learnFluid(server, resource.getFluid());
-        }
-        return resource.getAmount();
+        return 0;
     }
 
     @Override

@@ -5,7 +5,6 @@ import java.math.BigInteger;
 import io.github.vexedpanda.mcincremental.prestige.emc.ItemEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import moze_intel.projecte.api.ItemInfo;
-import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -13,9 +12,8 @@ import net.neoforged.neoforge.items.IItemHandler;
 
 /**
  * What pipes and machines see of an EMC barrel: one slot holding the configured item, as many as the world's balance
- * can pay for (up to a stack). Extracting debits each item's EMC value from the world balance. Inserting any item with
- * an EMC value credits that value to the world balance and learns the item; items with no EMC are refused and left
- * with the caller. Both directions use ProjectE's EMC value, not its sell value, so insert-then-extract nets zero.
+ * can pay for (up to a stack). Extracting debits each item's EMC value (ProjectE's EMC value, not its sell value, as
+ * the EMC intake credits) from the world balance. It only outputs: every insert is refused and left with the caller.
  */
 final class EmcBarrelItemHandler implements IItemHandler {
     private final EmcBarrelBlockEntity barrel;
@@ -34,15 +32,10 @@ final class EmcBarrelItemHandler implements IItemHandler {
         return available(Item.ABSOLUTE_MAX_STACK_SIZE);
     }
 
+    /** The barrel only outputs: nothing goes in (the EMC intake converts items into EMC). */
     @Override
     public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-        MinecraftServer server = barrel.server();
-        if (server == null || stack.isEmpty() || !isItemValid(slot, stack)) return stack;
-        if (!simulate) {
-            WorldEmc.addEmc(server, ItemEmc.stackValue(stack));
-            WorldEmc.learn(server, stack);
-        }
-        return ItemStack.EMPTY;
+        return stack;
     }
 
     @Override
@@ -77,6 +70,6 @@ final class EmcBarrelItemHandler implements IItemHandler {
 
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
-        return IEMCProxy.INSTANCE.hasValue(stack);
+        return false;
     }
 }

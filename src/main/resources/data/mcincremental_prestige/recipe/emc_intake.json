@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    { "item": "minecraft:hopper" },
+    { "item": "minecraft:redstone" }
+  ],
+  "result": { "id": "mcincremental_prestige:emc_intake", "count": 1 }
+}

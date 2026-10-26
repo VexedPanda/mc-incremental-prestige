@@ -34,25 +34,28 @@ import net.neoforged.neoforge.items.IItemHandler;
 @PrefixGameTestTemplate(false)
 public class EmcBarrelGameTests {
     private static final BlockPos BARREL = new BlockPos(1, 1, 1);
+    static final BlockPos INTAKE = new BlockPos(0, 1, 1);
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "emc_barrel_insert", timeoutTicks = 400)
-    public static void insertionCreditsExactlyTheItemsEmcAndLearnsIt(GameTestHelper helper) {
+    public static void aHopperCanNotInsertIntoTheBarrel(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         GameTests.rebuildEmcMap(helper);
+        BigInteger[] before = new BigInteger[1];
         helper.startSequence()
                 .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
                 .thenExecute(() -> {
                     IItemHandler barrel = placeBarrel(helper);
-                    BigInteger before = WorldEmc.balance(server);
-
-                    ItemStack rest = barrel.insertItem(0, new ItemStack(Items.QUARTZ, 5), false);
-
-                    helper.assertTrue(rest.isEmpty(), "Barrel should take all the quartz, left " + rest);
-                    // ProjectE's default value for nether quartz is 256.
-                    BigInteger expected = before.add(BigInteger.valueOf(5 * 256));
-                    helper.assertTrue(WorldEmc.balance(server).equals(expected),
-                            "Balance should be " + expected + ", got " + WorldEmc.balance(server));
-                    helper.assertTrue(WorldEmc.knows(server, new ItemStack(Items.QUARTZ)), "The world should know quartz");
+                    helper.assertFalse(barrel.isItemValid(0, new ItemStack(Items.QUARTZ)), "The barrel should accept nothing");
+                    helper.assertTrue(barrel.insertItem(0, new ItemStack(Items.QUARTZ, 5), false).getCount() == 5,
+                            "Inserting into the barrel should hand everything back");
+                    before[0] = WorldEmc.balance(server);
+                    GameTests.placeHopperAbove(helper, BARREL, new ItemStack(Items.QUARTZ, 5));
+                })
+                .thenIdle(GameTests.HOPPER_TICKS)
+                .thenExecute(() -> {
+                    int left = GameTests.hopperCount(helper, BARREL.above(), Items.QUARTZ);
+                    helper.assertTrue(left == 5, "All 5 quartz should stay in the hopper, " + left + " left");
+                    helper.assertTrue(WorldEmc.balance(server).equals(before[0]), "Balance should be unchanged");
                 })
                 .thenSucceed();
     }
@@ -123,41 +126,19 @@ public class EmcBarrelGameTests {
                 .thenSucceed();
     }
 
-    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "emc_barrel_reject", timeoutTicks = 400)
-    public static void itemsWithNoEmcAreRejectedNotDestroyed(GameTestHelper helper) {
-        var server = helper.getLevel().getServer();
-        GameTests.rebuildEmcMap(helper);
-        helper.startSequence()
-                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
-                .thenExecute(() -> {
-                    ItemStack bedrock = new ItemStack(Items.BEDROCK, 3);
-                    helper.assertFalse(IEMCProxy.INSTANCE.hasValue(bedrock), "Precondition: bedrock has no EMC");
-                    IItemHandler barrel = placeBarrel(helper);
-                    BigInteger before = WorldEmc.balance(server);
-
-                    helper.assertFalse(barrel.isItemValid(0, bedrock), "Barrel should not accept bedrock");
-                    ItemStack rest = barrel.insertItem(0, bedrock, false);
-
-                    helper.assertTrue(rest.is(Items.BEDROCK) && rest.getCount() == 3, "All the bedrock should come back, got " + rest);
-                    helper.assertTrue(bedrock.getCount() == 3, "The offered stack must not be shrunk");
-                    helper.assertTrue(WorldEmc.balance(server).equals(before), "Balance should be unchanged");
-                    helper.assertFalse(WorldEmc.knows(server, bedrock), "Bedrock should not be learned");
-                })
-                .thenSucceed();
-    }
-
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "emc_barrel_round_trip", timeoutTicks = 400)
-    public static void insertThenExtractNetsZeroEmc(GameTestHelper helper) {
+    public static void intakeThenBarrelNetsZeroEmc(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         GameTests.rebuildEmcMap(helper);
         helper.startSequence()
                 .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
                 .thenExecute(() -> {
                     IItemHandler barrel = placeBarrel(helper);
+                    IItemHandler intake = EmcIntakeGameTests.placeIntake(helper, INTAKE);
                     BigInteger before = WorldEmc.balance(server);
 
-                    helper.assertTrue(barrel.insertItem(0, new ItemStack(Items.REDSTONE, 7), false).isEmpty(),
-                            "Barrel should take the redstone");
+                    helper.assertTrue(intake.insertItem(0, new ItemStack(Items.REDSTONE, 7), false).isEmpty(),
+                            "The intake should take the redstone");
                     configure(helper, Items.REDSTONE);
                     ItemStack out = barrel.extractItem(0, 7, false);
 
