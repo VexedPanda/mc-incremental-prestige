@@ -32,8 +32,10 @@ import moze_intel.projecte.api.mapper.collector.IMappingCollector;
 import moze_intel.projecte.api.nss.NSSFake;
 import moze_intel.projecte.api.nss.NSSItem;
 import moze_intel.projecte.api.nss.NormalizedSimpleStack;
+import moze_intel.projecte.shaded.org.apache.commons.math3.fraction.BigFraction;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.ReloadableServerResources;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.item.ItemStack;
@@ -50,36 +52,53 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
  * way ProjectE values crafting recipes (VexedPanda/Mc-incremental#52). ProjectE discovers this class by its
  * annotation and loads it only when GregTech is installed; nothing else may reference it, so the mod runs without GT.
  *
- * <p>Per recipe of every GT recipe type:
+ * <p>Every GT recipe is mapped, recycling and decomposition included (VexedPanda/Mc-incremental#58):
  * <ul>
- *   <li>Inputs are the consumed item and fluid inputs. Non-consumed inputs (chance 0: programmed circuits, molds,
- *       lenses, catalysts) are left out, so they neither add cost nor make a loop. An item that is both input and
- *       output is netted out.</li>
- *   <li>Only the primary output is valued: the first guaranteed item output, else the first guaranteed fluid output.
- *       Its value is the whole input cost, less any byproduct fluid that has an explicit value. Other outputs
- *       (byproducts, chanced outputs) get no value from the recipe and aren't subtracted: subtracting byproducts that
- *       are valued by other routes drove primary outputs toward 0, which made new exploits. So a recipe with byproducts
- *       slightly overvalues its primary output (ProjectE takes the cheapest route, so only when it has no other).</li>
+ *   <li>Inputs are the consumed item and fluid inputs, at their expected amount (a chanced input at its chance).
+ *       Non-consumed inputs (chance 0: programmed circuits, molds, lenses, catalysts) are left out, so they neither add
+ *       cost nor make a loop. An item that is both input and output is netted out.</li>
+ *   <li>Outputs are every item and fluid output, chanced ones at their expected amount. The inputs' cost is split
+ *       across them ({@link OutputShares}): outputs valued elsewhere keep their value, and the outputs this recipe
+ *       values share the rest in proportion to their values, so the outputs together are worth the inputs.</li>
  *   <li>Fluids are valued per 1000 mB, from {@code fluid_emc} datapack values ({@link FluidEmc}); never from buckets.
  *       A fluid listed at 0 (water, steam) is free and left out, and so is water when unlisted (ADR-0005). An unlisted
  *       fluid gets no fixed value: it is valued only through GT recipes that make it (e.g. a fluid extractor melting an
  *       ingot), and that value is published for {@link FluidEmc} ({@link FluidEmc#derivedValueKey}), so a tank of it
- *       is worth what the recipes cost it at. Amounts are scaled so a recipe's fluid amounts stay exact.</li>
- *   <li>A conversion never makes its output free ({@link NeverFreeArithmetic}): a recipe with no consumed input, or
- *       whose valued byproduct fluids are worth more than its inputs, gives no value instead.</li>
+ *       is worth what the recipes cost it at.</li>
+ *   <li>A conversion never makes its output free ({@link NeverFreeArithmetic}).</li>
  * </ul>
  *
- * <p>Skipped: GT's recycling recipes ({@code *_recycling} categories: arc furnace, macerator and extractor scrapping,
- * whose outputs come from GT's material bills), except those that only change the form of one ingot, gem or dust (a
- * copper ingot arc-smelted into annealed copper, a diamond macerated into dust); GT's {@code decomposition_*} recipes
- * (centrifuge and electrolyzer splitting a compound or alloy back into its components, the inverse of the recipe that
- * values it); recipes with ranged ("int provider") amounts or fluid-container ingredients; outputs matching several
- * items or fluids; and per-tick inputs and outputs (EU, and the rare per-tick item or fluid).
+ * <p>Skipped: recipes with no consumed input (left after netting); recipes with ranged ("int provider") amounts or
+ * fluid-container ingredients; outputs matching several items or fluids; and per-tick inputs and outputs (EU, and the
+ * rare per-tick item or fluid).
  */
 @EMCMapper(requiredMods = "gtceu")
 public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long> {
-    /** Amounts are scaled so that one fluid node is 1000 mB and every fluid amount is a whole number of mB. */
-    private static final int MB_PER_NODE = 1000;
+    /**
+     * What the last mapping found pinned at a fixed value (custom EMC values, ProjectE's defaults, listed fluids): no
+     * recipe can lower those, so a recipe whose pinned outputs alone are worth more than its inputs keeps making EMC
+     * until it is re-priced.
+     */
+    private static volatile Set<NormalizedSimpleStack> pinned = Set.of();
+
+    public static boolean isPinned(NormalizedSimpleStack node) {
+        return pinned.contains(node);
+    }
+
+    /** The GT recipes whose cost the last mapping split across their outputs by share, and with fixed values. */
+    private static volatile Set<ResourceLocation> split = Set.of();
+    private static volatile Set<ResourceLocation> fixed = Set.of();
+
+    public static boolean isSplitByShare(ResourceLocation recipe) {
+        return split.contains(recipe);
+    }
+
+    public static boolean isSplitWithFixedValues(ResourceLocation recipe) {
+        return fixed.contains(recipe);
+    }
+
+    /** Shares are rounded up to millionths of a recipe's cost (coarser only when a conversion's amounts overflow). */
+    static final long SHARE_DENOMINATOR = 1_000_000;
 
     @Override
     public String getName() {
@@ -99,90 +118,117 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
     @Override
     public void addMappings(IMappingCollector<NormalizedSimpleStack, Long> collector, ReloadableServerResources serverResources,
             RegistryAccess registryAccess, ResourceManager resourceManager) {
+        Recipes recipes;
         NSSFake.setCurrentNamespace(McIncrementalPrestige.MODID + ":gt_recipes");
         try {
-            MappingPass pass = new MappingPass(collector);
-            int mapped = 0;
-            int skipped = 0;
+            recipes = new Recipes();
             for (var type : BuiltInRegistries.RECIPE_TYPE) {
                 if (!(type instanceof GTRecipeType gtType)) continue;
                 for (RecipeHolder<GTRecipe> holder : serverResources.getRecipeManager().getAllRecipesFor(gtType)) {
-                    if (pass.map(holder.value())) mapped++;
-                    else skipped++;
+                    recipes.read(holder.value());
                 }
             }
-            McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: mapped {} GT recipes, skipped {}", mapped, skipped);
         } finally {
             NSSFake.resetNamespace();
         }
+        OutputShares shares = OutputShares.find(this, recipes, serverResources, registryAccess, resourceManager);
+        pinned = Set.copyOf(shares.pinned);
+        split = Set.copyOf(shares.splitRecipes(false));
+        fixed = Set.copyOf(shares.splitRecipes(true));
+        IExtendedMappingCollector<NormalizedSimpleStack, Long, ?> target = extended(collector);
+        recipes.nodes.replayInto(target);
+        int dropped = shares.emit(target);
+        McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: mapped {} GT recipes, skipped {}", recipes.splits.size(),
+                recipes.skipped);
+        if (dropped > 0) {
+            McIncrementalPrestige.LOGGER.error("GT recipe EMC mapper: {} recipe outputs left out because their amounts "
+                    + "don't fit ProjectE's conversions", dropped);
+        }
     }
 
-    /** State for one mapping pass: the fluid nodes and ingredient groups created so far. */
-    private static final class MappingPass {
-        private final IMappingCollector<NormalizedSimpleStack, Long> collector;
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static IExtendedMappingCollector<NormalizedSimpleStack, Long, ?> extended(IMappingCollector<NormalizedSimpleStack, Long> collector) {
+        if (collector instanceof IExtendedMappingCollector ext) return ext;
+        throw new IllegalStateException("ProjectE's mapping collector takes no arithmetic: " + collector.getClass());
+    }
+
+    /**
+     * One GT recipe as amounts per run: consumed inputs and outputs, items in items and fluids in 1000 mB. {@code first}
+     * (whether the first output may take the whole cost, as in #52) is false when no output is guaranteed, and for
+     * GT's recycling (other than a material form change) and decomposition recipes: their outputs come from GT's
+     * material bills, or undo the recipe that values them, so they only value outputs nothing else values.
+     */
+    record Split(ResourceLocation id, Map<NormalizedSimpleStack, BigFraction> inputs, List<NormalizedSimpleStack> outputs,
+            List<BigFraction> amounts, boolean first, boolean decomposition) {
+    }
+
+    private enum Side {
+        INPUT, GUARANTEED, CHANCED;
+
+        /** Consumed inputs (chance above 0); guaranteed or chanced outputs. */
+        boolean takes(Content content) {
+            return switch (this) {
+                case INPUT -> content.chance() > 0;
+                case GUARANTEED -> content.chance() >= content.maxChance();
+                case CHANCED -> content.chance() > 0 && content.chance() < content.maxChance();
+            };
+        }
+    }
+
+    /** Material forms (GT tag prefix names) whose recycling recipes count as form changes. */
+    private static final Set<String> BASIC_FORMS = Set.of("ingot", "gem", "dust");
+
+    /** The GT recipes read so far, and the fluid and ingredient-group nodes they use. */
+    static final class Recipes {
+        final List<Split> splits = new ArrayList<>();
+        /** The nodes' own mappings (groups, fluid values), replayed into every graph before the recipes. */
+        final RecordingCollector nodes = new RecordingCollector();
+        int skipped;
         private final Map<Fluid, NormalizedSimpleStack> fluidNodes = new HashMap<>();
         private final Map<Set<NormalizedSimpleStack>, NormalizedSimpleStack> groups = new HashMap<>();
-        /** Fluid nodes with an explicit (datapack) value. */
-        private final Set<NormalizedSimpleStack> valuedFluids = new HashSet<>();
+        /** A fake node pinned at 1 EMC: a fixed value is a conversion from that many of it. */
+        private final NormalizedSimpleStack unit = NSSFake.create("emc unit");
 
-        /** ProjectE's collector, when it takes a per-conversion arithmetic (it always does today). */
-        @SuppressWarnings("rawtypes")
-        private final IExtendedMappingCollector extended;
-        private final IValueArithmetic<?> arithmetic;
-
-        @SuppressWarnings({"rawtypes", "unchecked"})
-        MappingPass(IMappingCollector<NormalizedSimpleStack, Long> collector) {
-            this.collector = collector;
-            if (collector instanceof IExtendedMappingCollector ext) {
-                extended = ext;
-                arithmetic = new NeverFreeArithmetic<>((IValueArithmetic) ext.getArithmetic());
-            } else {
-                extended = null;
-                arithmetic = null;
-                McIncrementalPrestige.LOGGER.warn("GT recipe EMC mapper: ProjectE's collector takes no arithmetic; "
-                        + "a recipe whose byproducts are worth more than its inputs will make its outputs free");
-            }
+        Recipes() {
+            nodes.setValueBefore(unit, 1L);
         }
 
-        /** Adds the recipe's conversions; false when the recipe is skipped. */
-        boolean map(GTRecipe recipe) {
-            boolean recycling = recipe.recipeCategory != null && recipe.recipeCategory.id.getPath().endsWith("_recycling");
-            if (recycling && !isMaterialFormChange(recipe)) return false;
-            if (recipe.id != null && recipe.id.getPath().contains("decomposition_")) return false;
-            // Amounts in thousandths: items × 1000, fluids in mB (one node = 1000 mB).
-            Map<NormalizedSimpleStack, Long> in = new LinkedHashMap<>();
-            Map<NormalizedSimpleStack, Long> out = new LinkedHashMap<>();
-            if (!collect(recipe.inputs, true, in) || !collect(recipe.outputs, false, out)) return false;
-            if (out.isEmpty()) return false;
+        void read(GTRecipe recipe) {
+            Map<NormalizedSimpleStack, BigFraction> in = new LinkedHashMap<>();
+            Map<NormalizedSimpleStack, BigFraction> out = new LinkedHashMap<>();
+            // Outputs in order: guaranteed items, guaranteed fluids, then chanced ones; the first is #52's.
+            if (!collect(recipe.inputs, Side.INPUT, in) || !collect(recipe.outputs, Side.GUARANTEED, out)) {
+                skipped++;
+                return;
+            }
+            Set<NormalizedSimpleStack> guaranteed = Set.copyOf(out.keySet());
+            if (!collect(recipe.outputs, Side.CHANCED, out)) {
+                skipped++;
+                return;
+            }
             // An item that comes back out is only consumed (or made) by the difference.
             for (var node : new ArrayList<>(out.keySet())) {
-                Long consumed = in.get(node);
+                BigFraction consumed = in.remove(node);
                 if (consumed == null) continue;
-                long net = out.get(node) - consumed;
-                in.remove(node);
-                out.remove(node);
-                if (net > 0) out.put(node, net);
-                else if (net < 0) in.put(node, -net);
+                BigFraction net = out.remove(node).subtract(consumed);
+                if (net.compareTo(BigFraction.ZERO) > 0) out.put(node, net);
+                else if (net.compareTo(BigFraction.ZERO) < 0) in.put(node, net.negate());
             }
-            if (out.isEmpty()) return false;
-            // Only the primary output (the first item, else the first fluid) is valued, from the whole input cost less
-            // byproduct fluids with an explicit value. Other outputs get no value from this recipe and aren't
-            // subtracted: subtracting byproducts valued by other routes drives the primary output's value toward 0.
-            var primary = out.entrySet().iterator().next();
-            Map<NormalizedSimpleStack, Long> amounts = new LinkedHashMap<>(in);
-            for (var other : out.entrySet()) {
-                if (other != primary && valuedFluids.contains(other.getKey())) {
-                    amounts.merge(other.getKey(), -other.getValue(), Long::sum);
-                }
+            if (in.isEmpty() || out.isEmpty()) {
+                skipped++;
+                return;
             }
-            return addConversion(primary.getKey(), primary.getValue(), amounts);
+            boolean recycling = recipe.recipeCategory != null && recipe.recipeCategory.id.getPath().endsWith("_recycling");
+            boolean decomposition = recipe.id != null && recipe.id.getPath().contains("decomposition_");
+            splits.add(new Split(recipe.id, in, List.copyOf(out.keySet()), List.copyOf(out.values()),
+                    guaranteed.contains(out.keySet().iterator().next()) && !decomposition
+                            && (!recycling || isMaterialFormChange(recipe)), decomposition));
         }
 
         /**
          * Whether a recycling recipe only changes the form of one material item (e.g. an arc furnace turning a copper
          * ingot into annealed copper, a macerator turning a gem into dust): one consumed ingot, gem or dust, and one
-         * guaranteed output. Recycling of parts, pipes, wires and machines is left out: its outputs come from GT's
-         * material bills, not from what the recipe costs.
+         * guaranteed output.
          */
         private static boolean isMaterialFormChange(GTRecipe recipe) {
             List<Content> items = recipe.inputs.getOrDefault(ItemRecipeCapability.CAP, List.of()).stream()
@@ -197,42 +243,47 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
             });
         }
 
-        /** Reduces the thousandths amounts by their common divisor and adds the conversion. */
-        private boolean addConversion(NormalizedSimpleStack output, long outAmount, Map<NormalizedSimpleStack, Long> amounts) {
-            amounts.values().removeIf(v -> v == 0);
-            BigInteger gcd = BigInteger.valueOf(outAmount);
-            for (long v : amounts.values()) gcd = gcd.gcd(BigInteger.valueOf(Math.abs(v)));
-            long divisor = gcd.longValueExact();
-            long outCount = outAmount / divisor;
-            if (outCount > Integer.MAX_VALUE) return false;
-            Object2IntMap<NormalizedSimpleStack> ingredients = new Object2IntOpenHashMap<>();
-            for (var entry : amounts.entrySet()) {
-                long v = entry.getValue() / divisor;
-                if (Math.abs(v) > Integer.MAX_VALUE) return false;
-                ingredients.put(entry.getKey(), (int) v);
+        /** Nodes with a value set before inheriting (pinned): by other mappers, or listed fluids. */
+        Set<NormalizedSimpleStack> pinned(RecordingCollector others) {
+            Set<NormalizedSimpleStack> pinned = new HashSet<>();
+            others.pinned(pinned);
+            nodes.pinned(pinned);
+            return pinned;
+        }
+
+        /** Output k at a fixed value per run ({@code value} EMC for the recipe's whole amount of it). */
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        boolean addFixed(IExtendedMappingCollector target, IValueArithmetic arithmetic, Split split, int k, double value) {
+            double each = value / split.amounts().get(k).doubleValue();
+            for (long outnumber : new long[] {1000, 1}) {
+                double units = Math.ceil(each * outnumber - 1e-9);
+                if (units < 1 || units > Integer.MAX_VALUE) continue;
+                Object2IntMap<NormalizedSimpleStack> ingredients = new Object2IntOpenHashMap<>();
+                ingredients.put(unit, (int) units);
+                target.addConversion((int) outnumber, split.outputs().get(k), ingredients, arithmetic);
+                return true;
             }
-            if (arithmetic != null) extended.addConversion((int) outCount, output, ingredients, arithmetic);
-            else collector.addConversion((int) outCount, output, ingredients);
-            return true;
+            return false;
         }
 
         /**
-         * Adds a capability map's consumed (inputs) or guaranteed (outputs) items and fluids to {@code into}; false
-         * when the recipe can't be mapped.
+         * Adds a capability map's consumed (inputs) or made (outputs) items and fluids to {@code into}, at their expected
+         * amounts; false when the recipe can't be mapped.
          */
-        private boolean collect(Map<?, List<Content>> contents, boolean inputs, Map<NormalizedSimpleStack, Long> into) {
+        private boolean collect(Map<?, List<Content>> contents, Side side, Map<NormalizedSimpleStack, BigFraction> into) {
+            boolean inputs = side == Side.INPUT;
             for (Content content : contents.getOrDefault(ItemRecipeCapability.CAP, List.of())) {
-                if (inputs ? content.chance() == 0 : content.chance() < content.maxChance()) continue;
+                if (!side.takes(content)) continue;
                 SizedIngredient sized = ItemRecipeCapability.CAP.of(content.content());
                 Ingredient ingredient = sized.ingredient();
                 if (ingredient.getCustomIngredient() instanceof IntCircuitIngredient) continue;
                 if (ingredient.getCustomIngredient() != null && !isPlain(ingredient)) return false;
                 NormalizedSimpleStack node = inputs ? itemInput(ingredient) : itemOutput(ingredient);
                 if (node == null) return false;
-                into.merge(node, (long) sized.count() * MB_PER_NODE, Long::sum);
+                into.merge(node, expected(content, sized.count()), BigFraction::add);
             }
             for (Content content : contents.getOrDefault(FluidRecipeCapability.CAP, List.of())) {
-                if (inputs ? content.chance() == 0 : content.chance() < content.maxChance()) continue;
+                if (!side.takes(content)) continue;
                 SizedFluidIngredient sized = FluidRecipeCapability.CAP.of(content.content());
                 if (sized.ingredient().getClass().getSimpleName().startsWith("IntProvider")) return false;
                 FluidStack[] fluids = sized.getFluids();
@@ -240,9 +291,16 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
                 NormalizedSimpleStack node = inputs ? fluidInput(fluids) : (fluids.length == 1 ? fluidNode(fluids[0].getFluid()) : null);
                 if (node == FREE) continue;
                 if (node == null) return false;
-                into.merge(node, (long) sized.amount(), Long::sum);
+                into.merge(node, expected(content, sized.amount()).divide(MB_PER_NODE), BigFraction::add);
             }
             return true;
+        }
+
+        /** The amount a run uses or makes on average: a chanced one at its chance. */
+        private static BigFraction expected(Content content, int amount) {
+            BigFraction chance = content.chance() >= content.maxChance() ? BigFraction.ONE
+                    : new BigFraction(content.chance(), content.maxChance());
+            return chance.multiply(amount);
         }
 
         /** GT's ranged ("int provider") and fluid-container ingredients have no fixed amount we can cost. */
@@ -283,7 +341,7 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
                 for (NormalizedSimpleStack member : set) {
                     Object2IntMap<NormalizedSimpleStack> one = new Object2IntOpenHashMap<>();
                     one.put(member, 1);
-                    collector.addConversion(1, dummy, one);
+                    nodes.addConversion(1, dummy, one);
                 }
                 return dummy;
             });
@@ -297,21 +355,64 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
             return fluidNodes.computeIfAbsent(source, f -> {
                 NormalizedSimpleStack node = NSSFake.create("fluid " + BuiltInRegistries.FLUID.getKey(f));
                 if (listed.isPresent()) {
-                    collector.setValueBefore(node, listed.getAsLong());
-                    valuedFluids.add(node);
+                    nodes.setValueBefore(node, listed.getAsLong());
                 } else {
                     // Publish the value derived for the fluid, so tanks and the barrel use it too (FluidEmc).
                     Object2IntMap<NormalizedSimpleStack> bucket = new Object2IntOpenHashMap<>();
                     bucket.put(node, 1);
-                    collector.addConversion(1, FluidEmc.derivedValueKey(f).toNSS(), bucket);
+                    nodes.addConversion(1, FluidEmc.derivedValueKey(f).toNSS(), bucket);
                 }
                 return node;
             });
         }
     }
 
-    /** Material forms (GT tag prefix names) whose recycling recipes ({@link MappingPass#isMaterialFormChange}) are mapped. */
-    private static final Set<String> BASIC_FORMS = Set.of("ingot", "gem", "dust");
+    /**
+     * Output k's conversion, costing {@code share} of the recipe's inputs; coarsens the share (rounding up) until the
+     * amounts fit ProjectE's ints. False when they never do.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    static boolean addShare(IExtendedMappingCollector target, IValueArithmetic arithmetic, Split split, int k, BigFraction share) {
+        for (long denominator = SHARE_DENOMINATOR; denominator >= 1; denominator /= 10) {
+            BigFraction rounded = share;
+            if (share.getDenominator().compareTo(BigInteger.valueOf(denominator)) > 0) {
+                BigFraction scaled = share.multiply(denominator);
+                BigInteger up = scaled.getNumerator().add(scaled.getDenominator()).subtract(BigInteger.ONE).divide(scaled.getDenominator());
+                rounded = new BigFraction(up, BigInteger.valueOf(denominator));
+            }
+            BigFraction perOutput = rounded.divide(split.amounts().get(k));
+            // Ingredient amounts per output: input amount × share ÷ output amount, scaled to whole numbers.
+            Map<NormalizedSimpleStack, BigFraction> ratios = new LinkedHashMap<>();
+            BigInteger outnumber = BigInteger.ONE;
+            for (var input : split.inputs().entrySet()) {
+                BigFraction ratio = input.getValue().multiply(perOutput);
+                ratios.put(input.getKey(), ratio);
+                outnumber = lcm(outnumber, ratio.getDenominator());
+            }
+            if (outnumber.bitLength() > 31) continue;
+            Object2IntMap<NormalizedSimpleStack> ingredients = new Object2IntOpenHashMap<>();
+            boolean fits = true;
+            for (var ratio : ratios.entrySet()) {
+                BigInteger amount = ratio.getValue().multiply(outnumber).getNumerator();
+                if (amount.bitLength() > 31) {
+                    fits = false;
+                    break;
+                }
+                ingredients.put(ratio.getKey(), amount.intValue());
+            }
+            if (!fits) continue;
+            target.addConversion(outnumber.intValue(), split.outputs().get(k), ingredients, arithmetic);
+            return true;
+        }
+        return false;
+    }
+
+    private static BigInteger lcm(BigInteger a, BigInteger b) {
+        return a.divide(a.gcd(b)).multiply(b);
+    }
+
+    /** One fluid node is 1000 mB. */
+    private static final int MB_PER_NODE = 1000;
 
     /** Marker for a free ingredient, which is left out of the conversion. */
     private static final NormalizedSimpleStack FREE = NSSFake.create("free marker (never added)");

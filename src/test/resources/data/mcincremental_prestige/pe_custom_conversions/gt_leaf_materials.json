@@ -1,5 +1,5 @@
 {
-  "comment": "GameTest-only (never in the jar): prices for the GT leaf materials that no recipe chain values, so the GT recipe EMC mapper (VexedPanda/Mc-incremental#52) can value machines and circuits up to EV. The Pack prices these itself in config/ProjectE/custom_emc.json.",
+  "comment": "GameTest-only (never in the jar): prices for the GT leaf materials that no recipe chain values, so the GT recipe EMC mapper (VexedPanda/Mc-incremental#52) can value machines and circuits up to EV, plus tungsten (the lathe test) and potash (the decomposition test). The Pack prices these itself in config/ProjectE/custom_emc.json.",
   "values": {
     "before": [
       {
@@ -71,6 +71,16 @@
         "type": "projecte:item",
         "id": "gtceu:rock_salt_dust",
         "emc_value": 16
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:tungsten_dust",
+        "emc_value": 4096
+      },
+      {
+        "type": "projecte:item",
+        "id": "gtceu:potash_dust",
+        "emc_value": 96
       }
     ]
   }
