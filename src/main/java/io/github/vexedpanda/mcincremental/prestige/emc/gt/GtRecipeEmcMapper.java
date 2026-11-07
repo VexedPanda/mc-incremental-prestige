@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
 
+import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.data.chemical.ChemicalHelper;
@@ -18,8 +19,11 @@ import com.gregtechceu.gtceu.api.data.tag.TagPrefix;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
+import com.gregtechceu.gtceu.api.recipe.ingredient.EnergyStack;
 import com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient;
+import com.gregtechceu.gtceu.utils.GTUtil;
 
+import io.github.vexedpanda.mcincremental.prestige.Config;
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
@@ -39,8 +43,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.ReloadableServerResources;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
@@ -65,12 +71,15 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
  *       fluid gets no fixed value: it is valued only through GT recipes that make it (e.g. a fluid extractor melting an
  *       ingot), and that value is published for {@link FluidEmc} ({@link FluidEmc#derivedValueKey}), so a tank of it
  *       is worth what the recipes cost it at.</li>
+ *   <li>When the common config's rates are set (VexedPanda/Mc-incremental#67), a recipe's EU and machine time are
+ *       added to its inputs' cost at its tier, and crafting recipes that use a GT tool are mapped, with the tool not
+ *       consumed ({@link Recipes#readToolCrafting}). With them off, values are v0.3.0's.</li>
  *   <li>A conversion never makes its output free ({@link NeverFreeArithmetic}).</li>
  * </ul>
  *
  * <p>Skipped: recipes with no consumed input (left after netting); recipes with ranged ("int provider") amounts or
- * fluid-container ingredients; outputs matching several items or fluids; and per-tick inputs and outputs (EU, and the
- * rare per-tick item or fluid).
+ * fluid-container ingredients; outputs matching several items or fluids; and per-tick inputs and outputs (EU, which is
+ * costed only through the rates, and the rare per-tick item or fluid).
  */
 @EMCMapper(requiredMods = "gtceu")
 public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long> {
@@ -119,13 +128,19 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
     public void addMappings(IMappingCollector<NormalizedSimpleStack, Long> collector, ReloadableServerResources serverResources,
             RegistryAccess registryAccess, ResourceManager resourceManager) {
         Recipes recipes;
+        Rates rates = Rates.fromConfig();
         NSSFake.setCurrentNamespace(McIncrementalPrestige.MODID + ":gt_recipes");
         try {
-            recipes = new Recipes();
+            recipes = new Recipes(rates);
             for (var type : BuiltInRegistries.RECIPE_TYPE) {
                 if (!(type instanceof GTRecipeType gtType)) continue;
                 for (RecipeHolder<GTRecipe> holder : serverResources.getRecipeManager().getAllRecipesFor(gtType)) {
                     recipes.read(holder.value());
+                }
+            }
+            if (rates.on()) {
+                for (var holder : serverResources.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
+                    recipes.readToolCrafting(holder, registryAccess);
                 }
             }
         } finally {
@@ -140,6 +155,10 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         int dropped = shares.emit(target);
         McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: mapped {} GT recipes, skipped {}", recipes.splits.size(),
                 recipes.skipped);
+        if (rates.on()) {
+            McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: EU and machine time added to {} GT recipes; mapped {} "
+                    + "crafting recipes that use a GT tool", recipes.timed, recipes.toolCrafting);
+        }
         if (dropped > 0) {
             McIncrementalPrestige.LOGGER.error("GT recipe EMC mapper: {} recipe outputs left out because their amounts "
                     + "don't fit ProjectE's conversions", dropped);
@@ -188,8 +207,13 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         private final Map<Set<NormalizedSimpleStack>, NormalizedSimpleStack> groups = new HashMap<>();
         /** A fake node pinned at 1 EMC: a fixed value is a conversion from that many of it. */
         private final NormalizedSimpleStack unit = NSSFake.create("emc unit");
+        private final Rates rates;
+        /** GT recipes given an EU and machine-time cost, and crafting recipes mapped because they use a GT tool. */
+        int timed;
+        int toolCrafting;
 
-        Recipes() {
+        Recipes(Rates rates) {
+            this.rates = rates;
             nodes.setValueBefore(unit, 1L);
         }
 
@@ -218,11 +242,68 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
                 skipped++;
                 return;
             }
+            addEuAndTime(recipe, in);
             boolean recycling = recipe.recipeCategory != null && recipe.recipeCategory.id.getPath().endsWith("_recycling");
             boolean decomposition = recipe.id != null && recipe.id.getPath().contains("decomposition_");
             splits.add(new Split(recipe.id, in, List.copyOf(out.keySet()), List.copyOf(out.values()),
                     guaranteed.contains(out.keySet().iterator().next()) && !decomposition
                             && (!recycling || isMaterialFormChange(recipe)), decomposition));
+        }
+
+        /**
+         * Adds the recipe's EU and machine time to its consumed inputs (VexedPanda/Mc-incremental#67): EU per run (EU per
+         * tick, voltage x amperage, x duration) x the EU price, plus its duration in seconds x the time rate, both at the
+         * recipe's tier (its EU voltage's; ULV when it uses no EU). Generator recipes (EU out) add nothing, and neither do
+         * a fusion recipe's start energy (not per tick) or overclocks and parallels. The cost goes in as a fake input worth
+         * it in thousandths of an EMC, so it is split across the outputs with the materials.
+         */
+        private void addEuAndTime(GTRecipe recipe, Map<NormalizedSimpleStack, BigFraction> in) {
+            if (!rates.on() || !recipe.getOutputEUt().isEmpty()) return;
+            EnergyStack eu = recipe.getInputEUt();
+            int tier = eu.isEmpty() ? GTValues.ULV : GTUtil.getTierByVoltage(eu.voltage());
+            double cost = (double) eu.getTotalEU() * recipe.duration * rates.euPrice(tier)
+                    + recipe.duration / 20.0 * rates.timeRate(tier);
+            long thousandths = Math.round(cost * 1000);
+            if (thousandths <= 0) return;
+            NormalizedSimpleStack node = NSSFake.create("eu and time " + timed + " " + recipe.id);
+            nodes.setValueBefore(node, thousandths);
+            in.put(node, new BigFraction(1, 1000));
+            timed++;
+        }
+
+        /**
+         * A crafting-table recipe that uses a GT tool, which ProjectE doesn't map: the tool comes back damaged, so it is
+         * left out (not consumed), and the craft takes no machine time. Mapped only when EU or time is counted, so it caps
+         * items whose machine route now costs more than their instant craft (VexedPanda/Mc-incremental#67). Skipped: no
+         * GT tool, special recipes, and other ingredients that leave something behind (buckets, fluid containers).
+         */
+        void readToolCrafting(RecipeHolder<CraftingRecipe> holder, RegistryAccess registryAccess) {
+            CraftingRecipe recipe = holder.value();
+            try {
+                if (recipe.isSpecial()) return;
+                ItemStack result = recipe.getResultItem(registryAccess);
+                if (result.isEmpty()) return;
+                Object2IntMap<NormalizedSimpleStack> ingredients = new Object2IntOpenHashMap<>();
+                boolean tool = false;
+                for (Ingredient ingredient : recipe.getIngredients()) {
+                    if (ingredient.isEmpty()) continue;
+                    ItemStack[] stacks = ingredient.getItems();
+                    if (stacks.length == 0) return;
+                    if (Arrays.stream(stacks).allMatch(stack -> isGtTool(stack.getItem()))) {
+                        tool = true;
+                        continue;
+                    }
+                    if (Arrays.stream(stacks).anyMatch(ItemStack::hasCraftingRemainingItem)) return;
+                    NormalizedSimpleStack node = itemInput(ingredient);
+                    if (node == null) return;
+                    ingredients.mergeInt(node, 1, Integer::sum);
+                }
+                if (!tool || ingredients.isEmpty()) return;
+                nodes.addConversion(result.getCount(), NSSItem.createItem(result), ingredients);
+                toolCrafting++;
+            } catch (RuntimeException e) {
+                McIncrementalPrestige.LOGGER.debug("GT recipe EMC mapper: can't read crafting recipe {}", holder.id(), e);
+            }
         }
 
         /**
@@ -409,6 +490,49 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
 
     private static BigInteger lcm(BigInteger a, BigInteger b) {
         return a.divide(a.gcd(b)).multiply(b);
+    }
+
+    /**
+     * GT's tool interface ({@code IGTTool}), looked up by name: it extends a GUI library interface that isn't on the
+     * compile classpath.
+     */
+    private static final Class<?> GT_TOOL = gtToolClass();
+
+    private static Class<?> gtToolClass() {
+        try {
+            return Class.forName("com.gregtechceu.gtceu.api.item.IGTTool");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("GregTech's IGTTool is missing", e);
+        }
+    }
+
+    /** Whether the item is a GT tool (hammer, wrench, file, ...). */
+    public static boolean isGtTool(net.minecraft.world.item.Item item) {
+        return GT_TOOL.isInstance(item);
+    }
+
+    /** The EMC per EU and per machine-second at each GT tier, from the common config (VexedPanda/Mc-incremental#67). */
+    record Rates(List<? extends Number> euPrices, List<? extends Number> timeRates) {
+        static Rates fromConfig() {
+            Rates rates = new Rates(List.copyOf(Config.EU_PRICE.get()), List.copyOf(Config.TIME_RATE.get()));
+            for (String warning : Config.timeRateWarnings(rates.timeRates())) {
+                McIncrementalPrestige.LOGGER.warn("GT recipe EMC mapper: {}", warning);
+            }
+            return rates;
+        }
+
+        /** Whether EU or time is counted at any tier (off: v0.3.0's values). */
+        boolean on() {
+            return euPrices.stream().anyMatch(n -> n.doubleValue() > 0) || timeRates.stream().anyMatch(n -> n.doubleValue() > 0);
+        }
+
+        double euPrice(int tier) {
+            return Config.atTier(euPrices, tier);
+        }
+
+        double timeRate(int tier) {
+            return Config.atTier(timeRates, tier);
+        }
     }
 
     /** One fluid node is 1000 mB. */

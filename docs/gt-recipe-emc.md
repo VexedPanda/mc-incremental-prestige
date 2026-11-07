@@ -13,6 +13,39 @@ vocabulary and pricing decisions live in the pack repo (`GLOSSARY.md`, `docs/poc
   ("int provider") amounts, fluid-container ingredients, outputs matching several items or fluids, and per-tick
   contents.
 
+## EU and machine time (#67)
+
+The pack's owner decided on #64 that time is a cost the player pays (the pack's `docs/research/time-in-emc.md`). With
+the rates set, each GT recipe with a consumed input also costs, before the cost is split across its outputs:
+
+- **EU:** EU per run (EU per tick, voltage × amperage, × duration in ticks) × `emc.euPrice` at the recipe's tier;
+- **machine time:** duration in seconds × `emc.timeRate` at the recipe's tier.
+
+The tier is the recipe's EU voltage tier (ULV when it uses no EU, such as the primitive blast furnace). The duration is
+the listed one, with no overclock or parallel. Generator recipes (EU out) add neither, and a fusion recipe's start
+energy isn't counted. The cost is a fake input worth it in thousandths of an EMC, so the split below treats it like any
+other input.
+
+Both are lists per GT voltage tier in `config/mcincremental_prestige-common.toml`, starting at ULV
+(`[ULV, LV, MV, HV, EV, IV, LuV, ZPM, UV, UHV, ...]`); a tier past the end of a list takes the last value listed. Both are
+empty by default, which is off: values are then exactly v0.3.0's. The pack sets them (#68): time at 4 EMC per
+machine-second at LV, doubling each tier, and the EU price per tier from the cheapest generator there.
+
+**The overclock check.** GT's overclock runs a recipe twice as fast per tier above its own, so a recipe valued at its own
+tier earns 2 × its time rate per second one tier up. The mapper logs a warning for each tier whose `timeRate` is less
+than double the tier below's.
+
+## Crafting with GT tools (#67)
+
+ProjectE doesn't map crafting-table recipes that use a GT tool (the tool comes back damaged, which it can't value). With
+time counted, about 1,000 of them would make items worth more than their inputs: the item's only mapped route is a timed
+machine recipe, while the craft is instant. So when either rate is set, the mapper also maps every crafting recipe with an
+ingredient only GT tools match: the tool is left out (not consumed), the other ingredients are the cost (a tag as its
+cheapest item, as ProjectE does), and the craft takes no time. A small tungsten fluid pipe, crafted from a tungsten plate
+with a wrench and a hammer, is then worth the plate rather than an ingot extruded at HV. Skipped: special recipes, and
+recipes whose other ingredients leave something behind (buckets, fluid containers). With the rates off these recipes
+stay unmapped, as in v0.3.0.
+
 ## Splitting the cost across the outputs (#58)
 
 Each recipe's input cost is split across all its outputs, so its outputs together are worth no more than its inputs.
@@ -70,4 +103,5 @@ The sweep allows 2 EMC or 0.5% of the inputs for rounding.
 
 `src/test/.../GtRecipeEmcGameTests.java`: the macerator tiers and circuits stay within the research's bounds, the lathe
 and a decomposition (potash) are balanced, fluids use their explicit values, unlisted fluids take their derived value,
-and the sweep above.
+and the sweep above. With the rates off, values are v0.3.0's; with them set, an LV and an HV recipe total materials + EU
+× price + seconds × rate, and a tool craft (the small tungsten fluid pipe) caps its output; the overclock check warns.
