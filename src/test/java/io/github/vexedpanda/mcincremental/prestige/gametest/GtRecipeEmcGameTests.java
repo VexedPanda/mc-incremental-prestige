@@ -2,6 +2,7 @@ package io.github.vexedpanda.mcincremental.prestige.gametest;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient;
 
+import io.github.vexedpanda.mcincremental.prestige.Config;
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
@@ -31,6 +33,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
@@ -124,6 +127,138 @@ public class GtRecipeEmcGameTests {
             helper.assertTrue(2 * potassium <= 3 * potash + rounding(3 * potash), "2 potassium dust (2 x " + potassium + ") should be worth no more "
                     + "than the 3 potash dust (3 x " + potash + ") they're electrolysed from");
         });
+    }
+
+    /**
+     * With the time rate and EU price off (the default), values are v0.3.0's: these were measured in a GameTest run of
+     * v0.3.0 (VexedPanda/Mc-incremental#67).
+     */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, timeoutTicks = 600)
+    public static void withTheRatesOffValuesAreThoseOfV030(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        helper.succeedWhen(() -> {
+            GameTests.assertEmcMapBuilt(helper);
+            Map<String, Long> v030 = Map.ofEntries(Map.entry("gtceu:lv_macerator", 10_417L), Map.entry("gtceu:mv_macerator", 28_324L),
+                    Map.entry("gtceu:hv_macerator", 57_872L), Map.entry("gtceu:ev_macerator", 93_940L),
+                    Map.entry("gtceu:basic_integrated_circuit", 94L), Map.entry("gtceu:good_integrated_circuit", 878L),
+                    Map.entry("gtceu:advanced_integrated_circuit", 2_293L), Map.entry("gtceu:micro_processor_computer", 8_730L),
+                    Map.entry("gtceu:tungsten_ingot", 4_086L), Map.entry("gtceu:tungsten_rod", 2_038L),
+                    Map.entry("gtceu:small_tungsten_dust", 1_024L));
+            v030.forEach((id, value) -> helper.assertTrue(emc(helper, id) == value, id + " should be worth " + value
+                    + " as in v0.3.0, got " + emc(helper, id)));
+        });
+    }
+
+    /** EMC per machine-second for ULV, LV, MV, HV and EV (the pack's LV 4, ×2 per tier); later tiers take EV's. */
+    private static final List<Double> TEST_TIME_RATE = List.of(2.0, 4.0, 8.0, 16.0, 32.0);
+    /** EMC per EU for ULV, LV, MV, HV and EV (the research's LV 4 ×2 column). */
+    private static final List<Double> TEST_EU_PRICE = List.of(0.0063, 0.0063, 0.0032, 0.0012, 0.00028);
+
+    /**
+     * With the time rate and EU price set, a recipe's outputs total its materials plus its EU × the EU price plus its
+     * seconds × the time rate, at the recipe's tier (VexedPanda/Mc-incremental#67). Values with the config off are
+     * checked first, so the test also shows they move.
+     */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "gt_emc_rates", timeoutTicks = 1200)
+    public static void euAndMachineTimeAreAddedToARecipesCostAtItsTier(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> {
+                    // Off (the default): v0.3.0's values.
+                    helper.assertTrue(arsenic(helper) == 3_555, "Molten arsenic should be its 1000/144 arsenic dust (3555 per "
+                            + "1000 mB) with the rates off, got " + arsenic(helper));
+                    double[] off = sides(helper, CYCLOHEXANE);
+                    assertTotal(helper, "Cyclohexane with the rates off", off[1], off[0]);
+                    Config.TIME_RATE.set(TEST_TIME_RATE);
+                    Config.EU_PRICE.set(TEST_EU_PRICE);
+                    GameTests.rebuildEmcMap(helper);
+                })
+                .thenWaitUntil(() -> {
+                    GameTests.assertEmcMapBuilt(helper);
+                    // LV: gtceu:extractor/extract_arsenic_dust, 1 arsenic dust (512) -> 144 mB of molten arsenic (unlisted, so
+                    // valued only from this recipe), 30 EU/t for 75 ticks: 2,250 EU at 0.0063 and 3.75 s at 4 EMC/s.
+                    long arsenic = arsenic(helper);
+                    assertTotal(helper, "144 mB of molten arsenic", arsenic * 0.144, 512 + 2_250 * 0.0063 + 3.75 * 4);
+                    // HV: gtceu:chemical_reactor/cyclohexane, a nickel dust, 1000 mB of benzene and 6000 mB of hydrogen
+                    // (free) -> 1000 mB of cyclohexane (nothing else makes it), 480 EU/t for 400 ticks: 192,000 EU at 0.0012
+                    // and 20 s at 16 EMC/s. Its materials are its inputs' values with the rates on.
+                    double[] on = sides(helper, CYCLOHEXANE);
+                    assertTotal(helper, "1000 mB of cyclohexane", on[1], on[0] + 192_000 * 0.0012 + 20 * 16);
+                    McIncrementalPrestige.LOGGER.info("GT recipe EMC with rates: molten arsenic {} per 1000 mB (3555 off); "
+                            + "1000 mB of cyclohexane {} from {} of materials", arsenic, on[1], on[0]);
+                    // Tool crafting: gtceu:shaped/small_tungsten_pipe, a tungsten plate with a wrench and a hammer, which
+                    // aren't consumed. It takes no time, so it is cheaper than extruding an ingot at HV.
+                    helper.assertTrue(craftedWithAGtTool(helper, "gtceu:tungsten_small_fluid_pipe"), "Expected a crafting "
+                            + "recipe making a small tungsten fluid pipe with a GT tool");
+                    long plate = emc(helper, "gtceu:tungsten_plate");
+                    long pipe = emc(helper, "gtceu:tungsten_small_fluid_pipe");
+                    McIncrementalPrestige.LOGGER.info("GT recipe EMC with rates: tungsten plate {}, small tungsten fluid pipe {}",
+                            plate, pipe);
+                    helper.assertTrue(plate > 0 && pipe > 0 && pipe <= plate, "A small tungsten fluid pipe should be "
+                            + "worth no more than the tungsten plate it's crafted from with tools (" + plate + "), got " + pipe);
+                })
+                .thenExecute(GtRecipeEmcGameTests::ratesOff)
+                .thenSucceed();
+    }
+
+    /** The overclock check: a time rate less than double the tier below's is warned about; doubling or more is fine. */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE)
+    public static void aTimeRateLessThanDoubleTheTierBelowIsWarnedAbout(GameTestHelper helper) {
+        helper.assertTrue(Config.timeRateWarnings(List.of(2, 4, 8, 16, 32)).isEmpty() && Config.timeRateWarnings(List.of(1, 4.0, 16)).isEmpty(),
+                "Rates doubling or more each tier should pass the overclock check, got " + Config.timeRateWarnings(List.of(2, 4, 8, 16, 32)));
+        List<String> warnings = Config.timeRateWarnings(List.of(2, 4, 6, 16));
+        helper.assertTrue(warnings.size() == 1 && warnings.get(0).contains("MV") && warnings.get(0).contains("LV"),
+                "LV 4 then MV 6 should give one warning, naming MV and LV, got " + warnings);
+        helper.succeed();
+    }
+
+    /** Whether a crafting-table recipe makes {@code id} from an ingredient that only GT tools match. */
+    private static boolean craftedWithAGtTool(GameTestHelper helper, String id) {
+        var server = helper.getLevel().getServer();
+        Item output = BuiltInRegistries.ITEM.get(ResourceLocation.parse(id));
+        for (var holder : server.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
+            if (holder.value().getResultItem(server.registryAccess()).getItem() != output) continue;
+            for (Ingredient ingredient : holder.value().getIngredients()) {
+                ItemStack[] stacks = ingredient.getItems();
+                if (stacks.length > 0 && Arrays.stream(stacks).allMatch(stack -> GtRecipeEmcMapper.isGtTool(stack.getItem()))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static void ratesOff() {
+        Config.TIME_RATE.set(List.of());
+        Config.EU_PRICE.set(List.of());
+    }
+
+    private static final ResourceLocation CYCLOHEXANE = ResourceLocation.parse("gtceu:chemical_reactor/cyclohexane");
+
+    /** A GT recipe's materials (consumed inputs) and outputs, in EMC per run ({@link #costAndOutputs}). */
+    private static double[] sides(GameTestHelper helper, ResourceLocation id) {
+        var holder = helper.getLevel().getServer().getRecipeManager().byKey(id);
+        helper.assertTrue(holder.isPresent() && holder.get().value() instanceof GTRecipe, id + " should be a GT recipe");
+        double[] sides = costAndOutputs((GTRecipe) holder.get().value());
+        helper.assertTrue(sides != null && sides[0] > 0, id + "'s inputs need EMC");
+        return sides;
+    }
+
+    /** Molten arsenic's EMC per 1000 mB. */
+    private static long arsenic(GameTestHelper helper) {
+        return moltenValue(helper, "gtceu:arsenic");
+    }
+
+    /** An unlisted fluid's EMC per 1000 mB. */
+    private static long moltenValue(GameTestHelper helper, String id) {
+        Fluid fluid = BuiltInRegistries.FLUID.get(ResourceLocation.parse(id));
+        helper.assertTrue(fluid != Fluids.EMPTY && FluidEmc.listedValuePerBucket(fluid).isEmpty(),
+                id + " must be a registered, unlisted fluid");
+        return FluidEmc.valuePerBucket(fluid);
+    }
+
+    private static void assertTotal(GameTestHelper helper, String what, double actual, double expected) {
+        helper.assertTrue(Math.abs(actual - expected) <= rounding(expected), what + " should be worth " + String.format("%.1f",
+                expected) + " (materials + EU x price + seconds x rate), got " + actual);
     }
 
     /**
