@@ -58,8 +58,7 @@ public class PrestigeSweepGameTests {
 
                     helper.assertTrue(level(helper).getBlockState(pos).isAir(),
                             "The placed diamond block should be swept, found " + level(helper).getBlockState(pos));
-                    // ProjectE's default value for a diamond block: 9 diamonds at 8192.
-                    assertCredited(helper, before, 73728);
+                    assertCredited(helper, before, diamondBlockEmc(helper));
                 }))
                 .thenSucceed();
     }
@@ -358,6 +357,17 @@ public class PrestigeSweepGameTests {
 
     static ServerLevel level(GameTestHelper helper) {
         return helper.getLevel().getServer().overworld();
+    }
+
+    /**
+     * A diamond block's EMC: at least ProjectE's default, 9 diamonds at 8192. With GregTech loaded, GT's compressor is
+     * the block's only recipe, and its machine time and EU add a little (VexedPanda/Mc-incremental#71).
+     */
+    static long diamondBlockEmc(GameTestHelper helper) {
+        long emc = IEMCProxy.INSTANCE.getValue(Items.DIAMOND_BLOCK);
+        helper.assertTrue(emc >= 73728 && emc < 73728 + 100, "A diamond block should be worth 9 diamonds (73728), plus at "
+                + "most a little machine time, got " + emc);
+        return emc;
     }
 
     static void assertCredited(GameTestHelper helper, BigInteger before, long emc) {
