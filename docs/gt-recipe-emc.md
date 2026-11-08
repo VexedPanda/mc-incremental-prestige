@@ -46,6 +46,13 @@ with a wrench and a hammer, is then worth the plate rather than an ingot extrude
 recipes whose other ingredients leave something behind (buckets, fluid containers). With the rates off these recipes
 stay unmapped, as in v0.3.0.
 
+**A cheaper machine route sets the price (#69).** A tool craft values its output in full, but a machine making it can also
+make byproducts. The file craft values a rod at a whole ingot, while the lathe turns an ingot into a rod and 2 small
+dusts: with the rod already worth the ingot, the lathe made half an ingot per run (RTM alloy gained about 6,100 EMC/s in
+the Pack). So when a GT recipe's outputs valued elsewhere are worth more than its inputs, the ones a tool craft values
+(the craft gives them their seed value; see 4 below) become the recipe's own, and share what's left once the others are
+paid. The lathe then values the rod at the ingot plus its EU and time, less the 2 small dusts: about half an ingot.
+
 ## Splitting the cost across the outputs (#58)
 
 Each recipe's input cost is split across all its outputs, so its outputs together are worth no more than its inputs.
@@ -67,11 +74,13 @@ its own conversion costing its share of the inputs. The shares are found before 
 4. **Gaining recipes.** When the outputs valued elsewhere are already worth more than the inputs, a decomposition
    lowers them all in proportion to their values until they add up to its inputs (3 potash electrolysed into 2
    potassium: potassium can't be worth more than 1.5 potash). Outputs pinned at a fixed value (custom EMC values,
-   ProjectE's defaults and the tags they pin, listed fluids) can't be lowered: they take their value first. Any other
-   gaining recipe is left as #52 had it (its first output takes the whole cost when it is that output's route):
-   lowering byproducts valued elsewhere carries through to everything made from them, and in the GameTest prices that
-   halved the macerators and sent copper dust from 108 to 8 EMC (cheap inputs such as clay, lava or netherrack whose
-   byproducts are priced as rare materials).
+   ProjectE's defaults and the tags they pin, listed fluids) can't be lowered: they take their value first. In any other
+   gaining recipe, only outputs valued by a GT tool craft are lowered (they become its own, as above; #69): an instant
+   craft ignores the byproducts a machine makes, so the machine's price is the fair one. The rest is left as #52 had
+   it (its first output takes the whole cost when it is that output's route): lowering byproducts valued by other
+   recipes carries through to everything made from them, and in the GameTest prices that halved the macerators and sent
+   copper dust from 108 to 8 EMC (cheap inputs such as clay, lava or netherrack whose byproducts are priced as rare
+   materials). Tool crafts are only mapped with the rates on, so with them off this changes nothing.
 5. **Fixed proportions, and no loops.** The shares never change within ProjectE's mapping: taking them from the values
    being computed would let them feed on themselves. A share that lowers an output is still dangerous when that output
    leads back to one of the recipe's inputs: ProjectE walks the loop again and again and pulls everything on it to 0
@@ -87,8 +96,8 @@ The private passes take about 2-3 s on top of the mapping itself; ProjectE's exp
 
 The GameTest `noSplitGtRecipeMakesMoreEmcThanItConsumes` sweeps every GT recipe (the rule of the pack's
 `docs/research/emc-pricing/audit.py`) and fails if a recipe split by share makes EMC. It logs the worst offenders of
-each kind of recipe that can still gain (GameTest prices: 0 split by share, 31 split with fixed values, 327 with
-pinned outputs, 440 others):
+each kind of recipe that can still gain (GameTest prices: 0 split by share, 31 split with fixed values, 334 with
+pinned outputs, 450 others):
 
 - **Split with fixed values** (loops, lathes of alloys, alloy decompositions): a fixed value lags behind inputs that
   drop in the same mapping, so these can gain up to a few hundred EMC (a few thousand at worst).
@@ -104,4 +113,6 @@ The sweep allows 2 EMC or 0.5% of the inputs for rounding.
 `src/test/.../GtRecipeEmcGameTests.java`: the macerator tiers and circuits stay within the research's bounds, the lathe
 and a decomposition (potash) are balanced, fluids use their explicit values, unlisted fluids take their derived value,
 and the sweep above. With the rates off, values are v0.3.0's; with them set, an LV and an HV recipe total materials + EU
-× price + seconds × rate, and a tool craft (the small tungsten fluid pipe) caps its output; the overclock check warns.
+× price + seconds × rate, a tool craft (the small tungsten fluid pipe) caps its output, and the lathe sets the RTM
+alloy and tungsten steel rods' values below their file crafts' (rod + 2 small dusts ≤ ingot + EU + time); the overclock
+check warns.
