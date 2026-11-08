@@ -4,7 +4,7 @@ Pack `GLOSSARY.md`: **Candidate area**; ADR-0008; spec VexedPanda/Mc-incremental
 
 ## The two steps
 
-1. **Prestige** (`/prestige`, or the Prestige item): `controller.Prestige.run` sweeps the old Run area and converts every online player's inventory and ender chest into EMC, as before. Instead of starting a Run, it offers `CandidateAreas.COUNT` (3) Candidate areas per dimension from `run.RunAreas.candidates`, each with a preview read from its generated chunks (below), lists them in every player's chat, and the world is now **choosing**. No Run area is added, and the border and world spawn stay on the old area.
+1. **Prestige** (`/prestige`, or the Prestige item): `controller.Prestige.run` sweeps the old Run area and converts every online player's inventory and ender chest into EMC, as before. Instead of starting a Run, it offers `CandidateAreas.COUNT` (3) Candidate areas per dimension from `run.RunAreas.candidates`, each with a preview read from its generated chunks (below), lists them in every player's chat and on their selection screen (below), and the world is now **choosing**. No Run area is added, and the border and world spawn stay on the old area.
 2. **Choose** (`/prestige choose <1-3>`, op level 2 like `/prestige`): `Prestige.choose` takes the candidate and starts the Run there with the usual Run start: `RunAreas.beginRun` (record, border, world spawn), the Run snapshot, the starting items (topped up, so a player who joined mid-choice and already got them isn't given a second set), then the teleport. The first choice wins: once chosen nothing is offered, and later choices fail with "No Candidate areas are offered".
 
 The world's first Run stays automatic: `Prestige.startFirstRun` takes one candidate and starts it with no choice.
@@ -32,6 +32,17 @@ The chat listing shows each candidate's number, middle, biome, ore veins (vein t
 
 The previews found, on that real world: the GT veins of each area (e.g. `gtceu:copper` with chalcopyrite, copper, iron and pyrite; `gtceu:magnetite` with gold, magnetite and vanadium magnetite), more ore materials from veins centred outside the area, and structures such as mineshafts, trial chambers and a plains village.
 
+
+## The selection screen
+
+Pack ticket #78. Every online player chooses on a NeoForge client screen, `client.CandidateScreen`; `/prestige choose <n>` and the chat listing stay for consoles, admins and clients without the screen.
+
+- **Layout:** a title and a hint at the top, then one row per dimension (only the Overworld for now) with the dimension's name above 3 cards, and a **Game menu** button at the bottom. A card shows its number and biome, the middle's x and z, its ore veins ("Magnetite vein (Gold, Magnetite)": GT vein ids are their main material's id, and materials use GT's `material.<namespace>.<name>` names) and its structures. A card too small for its preview ends in "..." and shows the whole preview as a tooltip. Cards shrink to fit the window, up to 180 by 150 pixels.
+- **Choosing:** clicking a card sends `network.ChooseCandidatePayload(n)`; the server calls `Prestige.choose(server, n)`, so the first choice wins, from the screen or the command, and later clicks do nothing. Any player may choose, with no permission check.
+- **Closing:** `Prestige.choose` sends every player an empty `CandidatesPayload`, which closes their screen.
+- **Reopening:** while the last payload had rows and no screen is showing (Escape, or the pause menu or chat over it was closed), the client sends `network.RequestCandidatesPayload` once a second; the server answers with the current `CandidatesPayload`, which reopens the screen while the choice is open, or closes it for good. The chat key and command key open chat from the screen, and the Game menu button the pause menu, so a player can still talk, type `/prestige choose` or disconnect. The screen doesn't pause the game.
+- **Payload:** `network.CandidatesPayload` holds the candidates as rows of `(dimension, candidates)` in numbering order, each candidate encoded with `ByteBufCodecs.fromCodec(CandidateArea.CODEC)`; an empty payload means nothing is offered. The server sends it (`network.CandidateNetwork.send`) where the chat listing is sent: to every player at a Prestige or re-roll (`PrestigeSummary.runAndAnnounce`), and to a player who joins mid-choice, a tick after the join (`MissedPrestige.joinMidChoice`). A payload that arrives while another screen shows (the client's loading screen at a join, the pause menu) doesn't replace it: the client notes that a choice is open and asks again once no screen is showing. It skips a connection without the channel (GameTest players).
+- **No game logic on the client:** the screen only shows the payload and reports clicks; numbering, the first-choice rule, freezing (`ChoosingFreeze`) and reopening are decided on the server.
 
 ## While candidates are offered
 
@@ -63,6 +74,8 @@ converted: [ <UUID int arrays> ]
 Groups keep their order, and numbering for `/prestige choose <n>` runs through them in order: only the Overworld group exists for now (3 candidates, numbered 1 to 3). Spec 2 adds Nether and End groups (3 each). `CandidateArea.CODEC` and `CandidatePreview.CODEC` encode it, so the screen's payload can reuse them (`ByteBufCodecs.fromCodec...`). `CandidateAreas.offered` is the numbered list and `CandidateAreas.offeredByDimension` the groups.
 
 ## Tests
+
+`CandidateScreenGameTests` (#78): the candidates payload's encode and decode round trip, with two dimension rows in a non-default order, keeps the rows, their order and the numbering; and a choose payload from a player, through its codec and its server handler, starts the Run in that candidate's area like `/prestige choose`, then a second one is ignored. The screen itself has no automated test: see the pack README's "What to try".
 
 `CandidateAreaGameTests` go through the command: offering 3 and starting no Run, choosing candidate n, a second choice ignored, a re-roll that converts nothing, the candidates surviving `RunRestartGameTests.simulateRestart`, the distance rule, and a player who joins mid-choice being listed the candidates, held and unhurt, then moved and released by the choice. The ocean rule uses the `RunAreas.candidates(server, n, unsuitable)` seam, as the GameTest world is superflat. `MissedPrestigeGameTests` covers a player who missed the sweep and joins mid-choice. `RunAreaGameTests.runStartLoadsTheNewSpawnChunks` checks, straight after `RunAreas.beginRun` and before the server ticks, that the spawn chunks are full and every chunk the spawn ticket reaches is at its ticket's status (#84). It calls `beginRun` directly because a whole choice hides the problem in the test world: the Run start snapshot loads the area's chunks, and on a superflat world the spawn is the area's centre.
 

@@ -3,6 +3,7 @@ package io.github.vexedpanda.mcincremental.prestige.controller;
 import com.mojang.serialization.Codec;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.network.CandidateNetwork;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
 import io.github.vexedpanda.mcincremental.prestige.run.StartingItems;
@@ -75,7 +76,7 @@ public final class MissedPrestige {
     /**
      * A player joining while Candidate areas are offered: one the pending Prestige hasn't converted yet has their
      * inventory and ender chest credited and wiped now, as at the sweep (a first-time player joins as they are). They
-     * are then shown the candidates and held still like everyone else ({@link ChoosingFreeze}) until the choice moves
+     * are then shown the candidates (in chat and on the Candidate selection screen) and held still like everyone else ({@link ChoosingFreeze}) until the choice moves
      * them to the new Run area, where they get the starting items.
      */
     private static void joinMidChoice(ServerPlayer player) {
@@ -95,6 +96,10 @@ public final class MissedPrestige {
             CandidateAreas.markConverted(server, player.getUUID());
         }
         CandidateAreas.list(player);
+        // The client is still loading the level while it is added: open its screen a tick later.
+        server.tell(new TickTask(server.getTickCount() + 1, () -> {
+            if (!player.isRemoved()) CandidateNetwork.send(player);
+        }));
     }
 
     private static void catchUp(ServerPlayer player, RunArea area) {

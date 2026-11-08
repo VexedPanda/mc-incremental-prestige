@@ -135,10 +135,8 @@ public final class CandidateAreas {
         for (Map.Entry<ResourceKey<Level>, List<CandidateArea>> group : groups.entrySet()) {
             player.sendSystemMessage(Component.translatable(DIMENSION_KEY, Component.literal(group.getKey().location().toString())));
             for (CandidateArea candidate : group.getValue()) {
-                RunArea area = candidate.area();
                 CandidatePreview preview = candidate.preview();
-                player.sendSystemMessage(Component.translatable(LINE_KEY, ++n,
-                        (int) Math.floor(area.middleX()), (int) Math.floor(area.middleZ()), biomeName(preview),
+                player.sendSystemMessage(Component.translatable(LINE_KEY, ++n, biomeName(preview),
                         veins(preview), structures(preview)));
             }
         }
