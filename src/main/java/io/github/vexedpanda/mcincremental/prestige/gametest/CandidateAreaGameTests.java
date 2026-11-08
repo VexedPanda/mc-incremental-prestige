@@ -2,27 +2,42 @@ package io.github.vexedpanda.mcincremental.prestige.gametest;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.controller.CandidateArea;
 import io.github.vexedpanda.mcincremental.prestige.controller.CandidateAreas;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreaConfig;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.levelgen.structure.BuiltinStructures;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
+import net.minecraft.world.level.levelgen.structure.pieces.PiecesContainer;
+import net.minecraft.world.level.levelgen.structure.structures.BuriedTreasurePieces;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -47,7 +62,7 @@ public class CandidateAreaGameTests {
 
                 PrestigeGameTests.runPrestigeCommand(helper);
 
-                List<RunArea> candidates = CandidateAreas.offered(server);
+                List<CandidateArea> candidates = CandidateAreas.offered(server);
                 helper.assertTrue(candidates.size() == 3, "3 Candidate areas should be offered, got " + candidates);
                 helper.assertTrue(RunAreas.visited(server).equals(visited), "No Run should start before a choice");
                 helper.assertTrue(player.blockPosition().equals(before),
@@ -65,6 +80,95 @@ public class CandidateAreaGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "candidates_grouped", timeoutTicks = 400)
+    public static void candidatesAreGroupedByDimensionAndNumberedInGroupOrder(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        PrestigeGameTests.withWorldRestored(helper, () -> {
+            PrestigeGameTests.runPrestigeCommand(helper);
+
+            Map<ResourceKey<Level>, List<CandidateArea>> groups = CandidateAreas.offeredByDimension(server);
+            helper.assertTrue(groups.keySet().equals(Set.of(Level.OVERWORLD)),
+                    "Only the Overworld should offer candidates for now, got " + groups.keySet());
+            List<CandidateArea> overworld = groups.get(Level.OVERWORLD);
+            helper.assertTrue(overworld.size() == 3, "The Overworld should offer 3 candidates, got " + overworld);
+            helper.assertTrue(CandidateAreas.offered(server).equals(overworld),
+                    "Candidates should be numbered through the groups in order, got " + CandidateAreas.offered(server));
+            RunArea second = overworld.get(1).area();
+            choose(helper, 2);
+            helper.assertTrue(RunAreas.current(server).equals(Optional.of(second)),
+                    "Choosing 2 should start the Run in the Overworld's second candidate " + second);
+        });
+        helper.succeed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "candidates_preview_biome", timeoutTicks = 400)
+    public static void eachCandidateIsGeneratedAndPreviewsTheBiomeAtItsMiddle(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        PrestigeGameTests.withWorldRestored(helper, () -> {
+            PrestigeGameTests.runPrestigeCommand(helper);
+
+            ServerLevel level = server.overworld();
+            for (CandidateArea candidate : CandidateAreas.offered(server)) {
+                RunArea area = candidate.area();
+                for (int x = area.centre().x - area.radiusChunks(); x <= area.centre().x + area.radiusChunks(); x++) {
+                    for (int z = area.centre().z - area.radiusChunks(); z <= area.centre().z + area.radiusChunks(); z++) {
+                        helper.assertTrue(level.hasChunk(x, z), "Chunk " + x + "," + z + " of " + area + " should be generated");
+                    }
+                }
+                // The GameTest world is superflat plains.
+                helper.assertTrue(candidate.preview().biome().equals(Optional.of(ResourceLocation.withDefaultNamespace("plains"))),
+                        "Candidate " + area + " should preview plains, got " + candidate.preview().biome());
+            }
+        });
+        helper.succeed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "candidates_preview_structures", timeoutTicks = 400)
+    public static void aCandidatePreviewListsTheStructuresWhoseStartsOverlapIt(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        PrestigeGameTests.withWorldRestored(helper, () -> {
+            List<Component> messages = new ArrayList<>();
+            ServerPlayer player = GameTests.joinedRecordingPlayer(helper, "previewer", messages);
+            PrestigeGameTests.runPrestigeCommand(helper); // the sweep, so the next Prestige only re-rolls
+            long seed = 77;
+            List<RunArea> predicted = predictReRoll(server, seed);
+            ServerLevel level = server.overworld();
+            ChunkPos centre = predicted.get(0).centre();
+            ChunkAccess chunk = level.getChunk(centre.x, centre.z);
+            Map<Structure, StructureStart> starts = new HashMap<>(chunk.getAllStarts());
+            Map<Structure, LongSet> references = new HashMap<>(chunk.getAllReferences());
+            // A buried treasure (which superflat never generates) started in candidate 1's centre chunk, as worldgen would.
+            Structure treasure = level.registryAccess().registryOrThrow(Registries.STRUCTURE).getOrThrow(BuiltinStructures.BURIED_TREASURE);
+            BlockPos at = new BlockPos(centre.getMiddleBlockX(), level.getMinBuildHeight() + 2, centre.getMiddleBlockZ());
+            chunk.setStartForStructure(treasure, new StructureStart(treasure, centre, 0,
+                    new PiecesContainer(List.of(new BuriedTreasurePieces.BuriedTreasurePiece(at)))));
+            chunk.addReferenceForStructure(treasure, centre.toLong());
+            try {
+                messages.clear();
+                reRoll(helper, seed);
+
+                List<CandidateArea> offered = CandidateAreas.offered(server);
+                helper.assertTrue(offered.stream().map(CandidateArea::area).toList().equals(predicted),
+                        "The re-roll should offer the predicted areas " + predicted + ", got " + offered);
+                ResourceLocation id = BuiltinStructures.BURIED_TREASURE.location();
+                helper.assertTrue(offered.get(0).preview().structures().contains(id),
+                        "Candidate 1 should list the buried treasure, got " + offered.get(0).preview().structures());
+                for (int i = 1; i < offered.size(); i++) {
+                    helper.assertFalse(offered.get(i).preview().structures().contains(id),
+                            "Candidate " + (i + 1) + " has no buried treasure, got " + offered.get(i).preview().structures());
+                }
+                Component line = candidateLine(messages, 1);
+                helper.assertTrue(line != null && lineArgument(line, 5).contains("buried_treasure"),
+                        "Candidate 1's chat line should list the buried treasure, got " + line);
+            } finally {
+                chunk.setAllStarts(starts);
+                chunk.setAllReferences(references);
+                player.discard();
+            }
+        });
+        helper.succeed();
+    }
+
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "candidates_choose", timeoutTicks = 400)
     public static void choosingACandidateStartsTheRunInItsArea(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
@@ -73,7 +177,7 @@ public class CandidateAreaGameTests {
             try {
                 int runs = RunAreas.runNumber(server);
                 PrestigeGameTests.runPrestigeCommand(helper);
-                RunArea second = CandidateAreas.offered(server).get(1);
+                RunArea second = CandidateAreas.offered(server).get(1).area();
 
                 choose(helper, 2);
 
@@ -96,7 +200,7 @@ public class CandidateAreaGameTests {
         MinecraftServer server = helper.getLevel().getServer();
         PrestigeGameTests.withWorldRestored(helper, () -> {
             PrestigeGameTests.runPrestigeCommand(helper);
-            RunArea first = CandidateAreas.offered(server).get(0);
+            RunArea first = CandidateAreas.offered(server).get(0).area();
             choose(helper, 1);
             List<RunArea> visited = RunAreas.visited(server);
 
@@ -133,7 +237,7 @@ public class CandidateAreaGameTests {
                         helper.assertTrue(WorldEmc.balance(server).equals(balance),
                                 "A re-roll should credit nothing: " + balance + ", got " + WorldEmc.balance(server));
                         helper.assertTrue(RunAreas.visited(server).equals(visited), "A re-roll should start no Run");
-                        RunArea third = CandidateAreas.offered(server).get(2);
+                        RunArea third = CandidateAreas.offered(server).get(2).area();
                         choose(helper, 3);
                         helper.assertTrue(RunAreas.current(server).equals(Optional.of(third)),
                                 "The re-rolled candidate 3 should be chosen");
@@ -149,14 +253,14 @@ public class CandidateAreaGameTests {
         MinecraftServer server = helper.getLevel().getServer();
         PrestigeGameTests.withWorldRestored(helper, () -> {
             PrestigeGameTests.runPrestigeCommand(helper);
-            List<RunArea> candidates = CandidateAreas.offered(server);
+            List<CandidateArea> candidates = CandidateAreas.offered(server);
 
             RunRestartGameTests.simulateRestart(server);
 
             helper.assertTrue(CandidateAreas.offered(server).equals(candidates),
                     "The candidates " + candidates + " should persist, got " + CandidateAreas.offered(server));
             choose(helper, 3);
-            helper.assertTrue(RunAreas.current(server).equals(Optional.of(candidates.get(2))),
+            helper.assertTrue(RunAreas.current(server).equals(Optional.of(candidates.get(2).area())),
                     "Choosing after the restart should start the Run in candidate 3's area");
         });
         helper.succeed();
@@ -170,7 +274,7 @@ public class CandidateAreaGameTests {
             for (int i = 0; i < 2; i++) {
                 List<RunArea> visited = RunAreas.visited(server);
                 PrestigeGameTests.runPrestigeCommand(helper);
-                List<RunArea> candidates = CandidateAreas.offered(server);
+                List<RunArea> candidates = CandidateAreas.offered(server).stream().map(CandidateArea::area).toList();
                 int min = RunAreaConfig.MIN_DISTANCE_CHUNKS.get();
                 for (RunArea candidate : candidates) {
                     ChunkPos c = candidate.centre();
@@ -260,6 +364,27 @@ public class CandidateAreaGameTests {
                     restore.run();
                 })
                 .thenSucceed();
+    }
+
+    /**
+     * Seeds the overworld's random and picks the Candidate areas a re-roll would offer with that seed, without offering
+     * them, so a test can prepare their chunks first; {@link #reRoll} with the same seed then offers exactly these.
+     */
+    static List<RunArea> predictReRoll(MinecraftServer server, long seed) {
+        server.overworld().getRandom().setSeed(seed);
+        return RunAreas.candidates(server, CandidateAreas.COUNT);
+    }
+
+    /** Re-rolls the candidates on offer ({@code /prestige} again) with the overworld's random seeded. */
+    static void reRoll(GameTestHelper helper, long seed) {
+        helper.getLevel().getServer().overworld().getRandom().setSeed(seed);
+        PrestigeGameTests.runPrestigeCommand(helper);
+    }
+
+    /** Argument {@code i} of a translated chat line, as text. */
+    static String lineArgument(Component line, int i) {
+        Object[] args = ((TranslatableContents) line.getContents()).getArgs();
+        return i < args.length ? (args[i] instanceof Component c ? c.getString() : String.valueOf(args[i])) : "";
     }
 
     /** Runs {@code /prestige choose <n>} as the server console. @return the command's result */

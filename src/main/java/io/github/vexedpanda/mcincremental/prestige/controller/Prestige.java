@@ -28,18 +28,18 @@ public final class Prestige {
     /**
      * Runs a Prestige for the world, the first of its two steps: sweeps the current Run area into the world's EMC
      * balance, converts every player's ender chest and inventory into EMC (crediting them, then emptying them), then
-     * offers {@link CandidateAreas#COUNT} Candidate areas for the next Run, holding every player still until one is
-     * chosen ({@link #choose}). Knowledge is untouched, and the balance only grows by what the sweep and the
-     * conversion credit.
+     * offers {@link CandidateAreas#COUNT} Candidate areas for the next Run, previewed from their generated chunks,
+     * holding every player still until one is chosen ({@link #choose}). Knowledge is untouched, and the balance only
+     * grows by what the sweep and the conversion credit.
      *
      * <p>While candidates are already offered, a Prestige only re-rolls them: the old area is already swept and the
      * players already converted, so nothing is swept or converted again.
      *
      * @return the Candidate areas now offered
      */
-    public static List<RunArea> run(MinecraftServer server) {
+    public static List<CandidateArea> run(MinecraftServer server) {
         if (CandidateAreas.isOffered(server)) {
-            CandidateAreas.offer(server, RunAreas.candidates(server, CandidateAreas.COUNT));
+            CandidateAreas.offerFresh(server);
             McIncrementalPrestige.LOGGER.info("Prestige: re-rolled the Candidate areas");
             return CandidateAreas.offered(server);
         }
@@ -54,7 +54,7 @@ public final class Prestige {
         }
         credit.creditTo(server);
         McIncrementalPrestige.LOGGER.info("Prestige: sweep, inventories and ender chests credited {} in {} ms", credit, (sweptAt - start) / 1_000_000);
-        CandidateAreas.offer(server, RunAreas.candidates(server, CandidateAreas.COUNT));
+        CandidateAreas.offerFresh(server);
         return CandidateAreas.offered(server);
     }
 
