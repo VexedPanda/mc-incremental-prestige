@@ -2,11 +2,15 @@ package io.github.vexedpanda.mcincremental.prestige.sweep;
 
 import java.math.BigInteger;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
+import io.github.vexedpanda.mcincremental.prestige.discovery.Discovery;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.ItemEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
+import moze_intel.projecte.api.ItemInfo;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.Container;
@@ -16,12 +20,15 @@ import net.minecraft.world.level.material.Fluid;
 /**
  * EMC owed to the world for things a Prestige takes away: whole EMC for items and blocks (ProjectE's value), and fluid
  * amounts, which {@link #credit} pays through {@link WorldEmc#addFluidEmc} so fractions of an EMC are kept exactly.
- * Collect everything first, then credit once. Server thread only.
+ * Collect everything first, then credit once; crediting also discovers every item and fluid collected (pack ADR-0009).
+ * Server thread only.
  */
 public final class EmcCredit {
     private BigInteger emc = BigInteger.ZERO;
     /** mB by source fluid; only fluids with an EMC value. */
     private final Map<Fluid, Long> fluids = new LinkedHashMap<>();
+    /** Each distinct item collected, for Discovery. */
+    private final Set<ItemInfo> items = new LinkedHashSet<>();
 
     /** Adds an amount of whole EMC. */
     public void addEmc(long amount) {
@@ -38,6 +45,13 @@ public final class EmcCredit {
     /** Adds a stack's full EMC value (its ProjectE value times its count); a stack with no value adds nothing. */
     public void addItem(ItemStack stack) {
         emc = emc.add(ItemEmc.stackValue(stack));
+        if (!stack.isEmpty()) items.add(ItemInfo.fromStack(stack));
+    }
+
+    /** Adds something converted at {@code value} whole EMC (a placed block), whose item form is {@code form}. */
+    public void addItem(ItemStack form, BigInteger value) {
+        addEmc(value);
+        if (!form.isEmpty()) items.add(ItemInfo.fromStack(form));
     }
 
     /** Adds {@code mB} of a fluid at its {@link FluidEmc} value; a fluid with no value is ignored. */
@@ -57,10 +71,11 @@ public final class EmcCredit {
         return emc;
     }
 
-    /** Credits everything collected to the world's balance. */
+    /** Credits everything collected to the world's balance, and discovers it. */
     public void creditTo(MinecraftServer server) {
         WorldEmc.addEmc(server, emc);
         fluids.forEach((fluid, mB) -> WorldEmc.addFluidEmc(server, fluid, mB));
+        Discovery.discoverAll(server, items.stream().map(ItemInfo::createStack).toList(), fluids.keySet());
     }
 
     @Override

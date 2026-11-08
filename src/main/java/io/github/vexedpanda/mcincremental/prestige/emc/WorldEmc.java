@@ -90,6 +90,16 @@ public final class WorldEmc {
         return learn(server, ItemInfo.fromStack(stack));
     }
 
+    /** Removes a resource from the world's Knowledge (tests, admin tools). @return whether it was known */
+    public static boolean forget(MinecraftServer server, ItemStack stack) {
+        WorldEmcData data = capture(server);
+        ItemInfo info = IEMCProxy.INSTANCE.getPersistentInfo(ItemInfo.fromStack(stack));
+        if (!data.knowledge.remove(info)) return false;
+        data.setDirty();
+        pushKnowledge(data, List.of(), List.of(info));
+        return true;
+    }
+
     /** Whether the world's Knowledge holds this resource. */
     public static boolean knows(MinecraftServer server, ItemInfo item) {
         return capture(server).knowledge.contains(IEMCProxy.INSTANCE.getPersistentInfo(item));
