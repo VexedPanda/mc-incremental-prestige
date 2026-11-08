@@ -21,6 +21,17 @@
   "mcincremental_prestige.candidates.line": "  %s: around x %s, z %s (%s). Ore veins: %s. Structures: %s",
   "mcincremental_prestige.candidates.none": "none",
   "mcincremental_prestige.candidates.vein": "%s vein (%s)",
-"mcincremental_prestige.discovery.discovered": "Discovered %s: the world can now make it from EMC",
-  "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run"
+  "mcincremental_prestige.discovery.discovered": "Discovered %s: the world can now make it from EMC",
+  "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run",
+  "mcincremental_prestige.screen.title": "Choose where the next Run goes",
+  "mcincremental_prestige.screen.hint": "Click a Candidate area: the first choice starts the Run for everyone",
+  "mcincremental_prestige.screen.candidate": "%s. %s",
+  "mcincremental_prestige.screen.position": "Around x %s, z %s",
+  "mcincremental_prestige.screen.veins": "Ore veins:",
+  "mcincremental_prestige.screen.structures": "Structures:",
+  "mcincremental_prestige.screen.choose": "Choose Candidate area %s",
+  "mcincremental_prestige.screen.game_menu": "Game menu",
+  "mcincremental_prestige.screen.dimension.minecraft.overworld": "Overworld",
+  "mcincremental_prestige.screen.dimension.minecraft.the_nether": "The Nether",
+  "mcincremental_prestige.screen.dimension.minecraft.the_end": "The End"
 }
