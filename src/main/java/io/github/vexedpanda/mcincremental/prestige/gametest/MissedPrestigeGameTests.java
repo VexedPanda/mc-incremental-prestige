@@ -38,7 +38,7 @@ public class MissedPrestigeGameTests {
                     player.getEnderChestInventory().addItem(new ItemStack(Items.GOLD_INGOT));
                     CompoundTag saved = leave(player);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
                     BigInteger before = WorldEmc.balance(server);
 
                     ServerPlayer back = rejoin(helper, "absentee", saved);
@@ -62,7 +62,7 @@ public class MissedPrestigeGameTests {
         MinecraftServer server = helper.getLevel().getServer();
         PrestigeGameTests.withWorldRestored(helper, () -> {
             ServerPlayer player = GameTests.joinedPlayer(helper, "regular");
-            PrestigeGameTests.runPrestigeCommand(helper);
+            PrestigeGameTests.runPrestigeAndChoose(helper);
             player.getInventory().add(new ItemStack(Items.DIAMOND, 5));
             player.getEnderChestInventory().addItem(new ItemStack(Items.GOLD_INGOT));
             player.moveTo(player.getX() + 3, player.getY(), player.getZ());
@@ -80,6 +80,41 @@ public class MissedPrestigeGameTests {
             back.discard();
         });
         helper.succeed();
+    }
+
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "missed_prestige_mid_choice", timeoutTicks = 400)
+    public static void aPlayerAbsentDuringAPrestigeWhoJoinsMidChoiceIsCreditedThenMovedByTheChoice(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        MinecraftServer server = helper.getLevel().getServer();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> PrestigeGameTests.withWorldRestored(helper, () -> {
+                    ServerPlayer player = GameTests.joinedPlayer(helper, "latecomer");
+                    player.getInventory().clearContent();
+                    player.getInventory().add(new ItemStack(Items.DIAMOND, 5));
+                    player.getEnderChestInventory().addItem(new ItemStack(Items.GOLD_INGOT));
+                    CompoundTag saved = leave(player);
+
+                    PrestigeGameTests.runPrestigeCommand(helper);
+                    BigInteger before = WorldEmc.balance(server);
+
+                    ServerPlayer back = rejoin(helper, "latecomer", saved);
+
+                    // 5 diamonds at 8192 and a gold ingot at 2048 (ProjectE defaults).
+                    BigInteger credit = WorldEmc.balance(server).subtract(before);
+                    helper.assertTrue(credit.equals(BigInteger.valueOf(5 * 8192 + 2048)),
+                            "Joining mid-choice should credit the inventory and ender chest (43008), got " + credit);
+                    helper.assertTrue(back.getEnderChestInventory().isEmpty(), "The ender chest should be wiped");
+
+                    CandidateAreaGameTests.choose(helper, 1);
+
+                    PrestigeGameTests.assertHoldsOnlyOneTablet(helper, back);
+                    RunArea area = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area"));
+                    helper.assertTrue(area.contains(back.blockPosition()),
+                            "The player at " + back.blockPosition() + " should be in the chosen Run area around " + area.centre());
+                    back.discard();
+                }))
+                .thenSucceed();
     }
 
     /** The player logs out: saved, then removed from the world. */

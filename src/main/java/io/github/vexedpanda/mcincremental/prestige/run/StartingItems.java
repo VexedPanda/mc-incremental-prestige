@@ -30,11 +30,20 @@ public final class StartingItems {
         for (Item item : configured()) player.getInventory().placeItemBackInInventory(new ItemStack(item));
     }
 
-    /** Gives the starting items the player doesn't hold anywhere in their inventory, armour or offhand. */
+    /** On every join, {@link #topUp}. */
     @SubscribeEvent
     static void onPlayerJoin(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide() || !(event.getEntity() instanceof ServerPlayer player)
                 || player instanceof FakePlayer) return;
+        topUp(player);
+    }
+
+    /**
+     * Gives the starting items the player doesn't hold anywhere in their inventory, armour or offhand. For a join, and
+     * for the start of a Run chosen from Candidate areas, where a player may have been topped up already by joining
+     * after the inventory wipe.
+     */
+    public static void topUp(ServerPlayer player) {
         for (Item item : configured()) {
             if (!player.getInventory().contains(new ItemStack(item))) {
                 player.getInventory().placeItemBackInInventory(new ItemStack(item));

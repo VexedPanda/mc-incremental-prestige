@@ -1,5 +1,6 @@
 package io.github.vexedpanda.mcincremental.prestige.run;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -73,30 +74,46 @@ public final class RunAreas {
     }
 
     /**
-     * Starts a new Run area: chooses one far from every earlier area and, if {@link RunAreaConfig#AVOID_OCEANS} is on,
-     * not centred in an ocean; records it as current, fits the world border to it and moves the world spawn to its
-     * safe spawn point. Doesn't move any player: call {@link #teleport} for each.
+     * Picks {@code count} Candidate areas for the next Run: each far from every earlier area and from the others and,
+     * if {@link RunAreaConfig#AVOID_OCEANS} is on, not centred in an ocean. Records and moves nothing.
      */
-    public static RunArea beginRun(MinecraftServer server) {
+    public static List<RunArea> candidates(MinecraftServer server, int count) {
         ServerLevel level = server.overworld();
         Predicate<ChunkPos> unsuitable = RunAreaConfig.AVOID_OCEANS.get() ? c -> isOceanCentred(level, c) : c -> false;
-        return beginRun(server, unsuitable);
+        return candidates(server, count, unsuitable);
     }
 
     /**
-     * {@link #beginRun(MinecraftServer)} with the centre check given: candidates whose centre chunk is
+     * {@link #candidates(MinecraftServer, int)} with the centre check given: areas whose centre chunk is
      * {@code unsuitable} are re-picked. Public for tests (the GameTest world is superflat, with no oceans).
      */
-    public static RunArea beginRun(MinecraftServer server, Predicate<ChunkPos> unsuitable) {
+    public static List<RunArea> candidates(MinecraftServer server, int count, Predicate<ChunkPos> unsuitable) {
+        ServerLevel level = server.overworld();
+        List<RunArea> visited = RunAreaData.get(server).visited;
+        ChunkPos origin = visited.isEmpty() ? new ChunkPos(level.getSharedSpawnPos()) : visited.getLast().centre();
+        List<RunArea> taken = new ArrayList<>(visited);
+        List<RunArea> picked = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            RunArea area = choose(level, origin, taken, unsuitable).orElseGet(() -> {
+                // E.g. the current area is deep in a huge ocean: better an ocean Run area (with a stone spawn block)
+                // than no Prestige.
+                McIncrementalPrestige.LOGGER.warn("Every candidate Run area was unsuitable (ocean); ignoring the check");
+                return choose(level, origin, taken, c -> false).orElseThrow(() -> new IllegalStateException(
+                        "No free Run area found after " + MAX_ATTEMPTS + " attempts"));
+            });
+            taken.add(area);
+            picked.add(area);
+        }
+        return picked;
+    }
+
+    /**
+     * Starts a Run in {@code area} (from {@link #candidates}): records it as current, fits the world border to it and
+     * moves the world spawn to its safe spawn point. Doesn't move any player: call {@link #teleport} for each.
+     */
+    public static RunArea beginRun(MinecraftServer server, RunArea area) {
         RunAreaData data = RunAreaData.get(server);
         ServerLevel level = server.overworld();
-        RunArea area = choose(level, data.visited, unsuitable).orElseGet(() -> {
-            // E.g. the current area is deep in a huge ocean: better an ocean Run area (with a stone spawn block) than
-            // no Prestige.
-            McIncrementalPrestige.LOGGER.warn("Every candidate Run area was unsuitable (ocean); ignoring the check");
-            return choose(level, data.visited, c -> false).orElseThrow(() -> new IllegalStateException(
-                    "No free Run area found after " + MAX_ATTEMPTS + " attempts"));
-        });
         data.visited.add(area);
         data.setDirty();
 
@@ -195,11 +212,12 @@ public final class RunAreas {
     }
 
     /**
-     * A grid-centred area 1 to 2 minimum distances (further if that ring is crowded) from the current area (or the world spawn before the first Run),
-     * in a random direction, at least the minimum distance from every earlier area and not {@code unsuitable}.
+     * A grid-centred area 1 to 2 minimum distances (further if that ring is crowded) from {@code origin} (the current
+     * area, or the world spawn before the first Run), in a random direction, at least the minimum distance from every
+     * {@code taken} area (earlier Run areas and the candidates already picked) and not {@code unsuitable}.
      */
-    private static Optional<RunArea> choose(ServerLevel level, List<RunArea> visited, Predicate<ChunkPos> unsuitable) {
-        ChunkPos origin = visited.isEmpty() ? new ChunkPos(level.getSharedSpawnPos()) : visited.getLast().centre();
+    private static Optional<RunArea> choose(ServerLevel level, ChunkPos origin, List<RunArea> taken,
+            Predicate<ChunkPos> unsuitable) {
         RandomSource random = level.getRandom();
         int minDistance = RunAreaConfig.MIN_DISTANCE_CHUNKS.get();
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -211,7 +229,7 @@ public final class RunAreas {
             int z = snapToGrid(origin.z + Math.sin(angle) * distance);
             if (Math.abs(x) > MAX_CENTRE_CHUNK || Math.abs(z) > MAX_CENTRE_CHUNK) continue;
             RunArea candidate = new RunArea(new ChunkPos(x, z), RunAreaConfig.RADIUS_CHUNKS.get());
-            if (visited.stream().allMatch(old -> old.distanceChunks(candidate) >= minDistance)
+            if (taken.stream().allMatch(old -> old.distanceChunks(candidate) >= minDistance)
                     && !unsuitable.test(candidate.centre())) return Optional.of(candidate);
         }
         return Optional.empty();

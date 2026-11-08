@@ -493,7 +493,7 @@ public class GtRecipeEmcGameTests {
                             .defaultBlockState());
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(pos).isAir(), "The MV macerator should be swept");
                     PrestigeSweepGameTests.assertCredited(helper, before, macerator);
@@ -545,7 +545,7 @@ public class GtRecipeEmcGameTests {
                     helper.assertTrue(filled == 1000, "The input hatch should take 1000 mB of molten copper, took " + filled);
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     // The hatch (pinned at 800 in gametest.json) and 1000 mB of molten copper at its derived value.
                     PrestigeSweepGameTests.assertCredited(helper, before, 800 + FluidEmc.valuePerBucket(copper));

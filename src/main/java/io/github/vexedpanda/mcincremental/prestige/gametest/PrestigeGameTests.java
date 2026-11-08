@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.controller.CandidateAreas;
 import io.github.vexedpanda.mcincremental.prestige.controller.PrestigeItem;
 import io.github.vexedpanda.mcincremental.prestige.controller.PrestigeItems;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
@@ -74,7 +75,7 @@ public class PrestigeGameTests {
                     player.getInventory().offhand.set(0, new ItemStack(Items.TORCH));
                     player.containerMenu.setCarried(new ItemStack(Items.STICK));
 
-                    runPrestigeCommand(helper);
+                    runPrestigeAndChoose(helper);
 
                     assertHoldsOnlyOneTablet(helper, player);
                     helper.assertTrue(player.containerMenu.getCarried().isEmpty(), "Carried stack should be wiped");
@@ -109,7 +110,7 @@ public class PrestigeGameTests {
                                 "The player should hold the starting tablet before the Prestige");
                         BigInteger before = WorldEmc.balance(server);
 
-                        runPrestigeCommand(helper);
+                        runPrestigeAndChoose(helper);
 
                         // Diamond 8192, gold ingot 2048, iron ingot 256 (ProjectE defaults); golden helmet 1000 and
                         // the tablet 0 (test pins).
@@ -148,7 +149,7 @@ public class PrestigeGameTests {
                         menu.setCarried(new ItemStack(Items.GOLD_INGOT));
                         BigInteger before = WorldEmc.balance(server);
 
-                        runPrestigeCommand(helper);
+                        runPrestigeAndChoose(helper);
 
                         // Two iron ingots at 256 and a gold ingot at 2048 (ProjectE defaults); the tablet is 0.
                         BigInteger credit = WorldEmc.balance(server).subtract(before);
@@ -173,7 +174,7 @@ public class PrestigeGameTests {
             // Two Prestiges, so the second must also avoid the area the first chose.
             for (int i = 0; i < 2; i++) {
                 List<RunArea> earlier = RunAreas.visited(server);
-                runPrestigeCommand(helper);
+                runPrestigeAndChoose(helper);
                 RunArea area = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area"));
                 ChunkPos c = area.centre();
 
@@ -205,7 +206,7 @@ public class PrestigeGameTests {
     public static void prestigeFitsTheWorldBorderToTheNewRunArea(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         withWorldRestored(helper, () -> {
-            runPrestigeCommand(helper);
+            runPrestigeAndChoose(helper);
             ChunkPos c = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area")).centre();
             WorldBorder border = server.overworld().getWorldBorder();
             // 3x3 chunks = 48 blocks; the centre chunk's middle is the area's middle.
@@ -231,8 +232,8 @@ public class PrestigeGameTests {
             helper.assertTrue(RunAreas.visited(server).size() == runs, "A sneak-use with nothing to confirm should not Prestige");
             useItem(player, item, false);
             useItem(player, item, false);
-            helper.assertTrue(RunAreas.visited(server).size() == runs,
-                    "Plain uses (as from a held use button) should not start a new Run area");
+            helper.assertTrue(RunAreas.visited(server).size() == runs && CandidateAreas.offered(server).isEmpty(),
+                    "Plain uses (as from a held use button) should not Prestige");
             helper.assertTrue(player.getInventory().contains(new ItemStack(Items.COBBLESTONE)), "Inventory should be kept");
             helper.assertTrue(args(messages, CONFIRM_KEY) != null, "The player should be asked to confirm, got " + messages);
             player.discard();
@@ -252,7 +253,9 @@ public class PrestigeGameTests {
             useItem(player, item, false);
             useItem(player, item, true);
 
-            helper.assertTrue(RunAreas.visited(server).size() == runs + 1, "The confirming sneak-use should start a new Run area");
+            helper.assertTrue(CandidateAreas.offered(server).size() == 3, "The confirming sneak-use should offer candidates");
+            CandidateAreaGameTests.choose(helper, 1);
+            helper.assertTrue(RunAreas.visited(server).size() == runs + 1, "Choosing should start a new Run area");
             RunArea area = RunAreas.current(server).orElseThrow();
             helper.assertTrue(area.contains(player.blockPosition()), "The player should be in the new Run area");
             assertHoldsOnlyOneTablet(helper, player);
@@ -269,7 +272,7 @@ public class PrestigeGameTests {
             a.getInventory().add(new ItemStack(Items.DIAMOND, 5));
             b.getInventory().add(new ItemStack(StartingItemsGameTests.tablet()));
 
-            runPrestigeCommand(helper);
+            runPrestigeAndChoose(helper);
 
             for (ServerPlayer p : new ServerPlayer[] {a, b}) assertHoldsOnlyOneTablet(helper, p);
             a.discard();
@@ -309,7 +312,7 @@ public class PrestigeGameTests {
             ServerPlayer a = GameTests.joinedRecordingPlayer(helper, "a", aMessages);
             ServerPlayer b = GameTests.joinedRecordingPlayer(helper, "b", bMessages);
 
-            runPrestigeCommand(helper);
+            runPrestigeAndChoose(helper);
 
             BigInteger after = WorldEmc.balance(server);
             // The gain is whatever the Prestige sweep credited.
@@ -369,15 +372,21 @@ public class PrestigeGameTests {
         return out;
     }
 
-    /** Runs {@code /prestige} as the server console. */
+    /** Runs {@code /prestige} as the server console: sweeps and offers Candidate areas, or re-rolls them. */
     static void runPrestigeCommand(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "prestige");
     }
 
+    /** A whole Prestige: {@code /prestige}, then {@code /prestige choose 1}, so a new Run starts. */
+    static void runPrestigeAndChoose(GameTestHelper helper) {
+        runPrestigeCommand(helper);
+        helper.assertTrue(CandidateAreaGameTests.choose(helper, 1) == 1, "Choosing candidate 1 should start a Run");
+    }
+
     /**
-     * A Prestige moves the world border and world spawn, which are shared by every test and persist in the test world
-     * between runs: put them back whatever happens.
+     * A Prestige moves the world border and world spawn and can leave Candidate areas offered, which are shared by
+     * every test and persist in the test world between runs: put them back whatever happens.
      */
     static void withWorldRestored(GameTestHelper helper, Runnable body) {
         Runnable restore = saveWorld(helper);
@@ -390,15 +399,20 @@ public class PrestigeGameTests {
 
     /**
      * Saves the world border and world spawn, for a test that Prestiges across several steps; run the result whatever
-     * happens. {@link #withWorldRestored} does this for one step.
+     * happens. {@link #withWorldRestored} does this for one step. Candidate areas left offered (by this test, or by
+     * an earlier run's test that failed mid-choice) are withdrawn now and again on restore, so a {@code /prestige}
+     * sweeps instead of re-rolling.
      */
     static Runnable saveWorld(GameTestHelper helper) {
-        ServerLevel level = helper.getLevel().getServer().overworld();
+        MinecraftServer server = helper.getLevel().getServer();
+        CandidateAreas.withdraw(server);
+        ServerLevel level = server.overworld();
         WorldBorder border = level.getWorldBorder();
         double x = border.getCenterX(), z = border.getCenterZ(), size = border.getSize();
         BlockPos spawn = level.getSharedSpawnPos();
         float spawnAngle = level.getSharedSpawnAngle();
         return () -> {
+            CandidateAreas.withdraw(server);
             border.setCenter(x, z);
             border.setSize(size);
             level.setDefaultSpawnPos(spawn, spawnAngle);

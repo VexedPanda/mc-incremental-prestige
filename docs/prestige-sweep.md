@@ -4,9 +4,9 @@ Design decision: pack repo ADR-0007 (diff against a snapshot taken at Run start)
 
 ## Run start
 
-1. Pick the Run area; force-load it plus the sweep margin (server config `runArea.sweepMarginChunks`, default 1: 5×5 around the default 3×3) with a ticket.
+1. Take the chosen Candidate area ([`candidate-areas.md`](candidate-areas.md)); force-load it plus the sweep margin (server config `runArea.sweepMarginChunks`, default 1: 5×5 around the default 3×3) with a ticket.
 2. Wait until the 3×3 is **ticking** (`ServerChunkCache.isPositionTicking`), not just FULL: `postProcessGeneration()` (fence shapes, spring fluid ticks) runs in `ChunkMap.prepareTickingChunk`.
-3. Snapshot, then teleport the player.
+3. Snapshot, then teleport the players.
 
 ## Snapshot
 
@@ -35,7 +35,7 @@ A `LevelChunk.setBlockState` mixin setting dirty-section bits as a pre-filter, n
 
 ## Implementation (#29)
 
-- `sweep.RunSnapshots.take(server, area)`: Run start, called by `controller.Prestige.run` after `RunAreas.beginRun`. Adds a region ticket, drives chunk loading on the server thread until the area plus margin (5×5 by default) is ticking (60 s timeout), copies every section, removes the ticket. The snapshot lives in one `SavedData` (`mcincremental_prestige_run_snapshot`), saved with the vanilla section codec.
+- `sweep.RunSnapshots.take(server, area)`: Run start, called by `controller.Prestige.choose` (and `startFirstRun`) after `RunAreas.beginRun`. Adds a region ticket, drives chunk loading on the server thread until the area plus margin (5×5 by default) is ticking (60 s timeout), copies every section, removes the ticket. The snapshot lives in one `SavedData` (`mcincremental_prestige_run_snapshot`), saved with the vanilla section codec.
 - `sweep.PrestigeSweep.sweep(server)`: phases collect → drain all block entities (#30) → value → remove → entities (#31), then clears the snapshot. Returns a `sweep.EmcCredit`; `Prestige.run` credits it (see #30 below). It sweeps the Run area plus the margin the snapshot was taken with (`RunAreaConfig.sweepMarginChunks`, default 1).
 - Fluid sources (#31): after remove, a pass over the changed positions credits each one still holding a valued fluid source (1000 mB into the EmcCredit) and removes it, e.g. lava leaked into the margin. It reads the live world, so anything an earlier phase already removed is not credited twice; since #30 the value phase already takes the valued sources it sees, so this pass is a backstop.
 - Entities (#31): `RunSnapshots.take` records the UUIDs of every non-player entity in the snapshot's chunks (from `level.getAllEntities()`, while the chunks are held ticking: the level's entity getters only see accessible entity sections), saved with the snapshot. The sweep's last phase credits and discards every `ItemEntity` in those chunks, whenever it appeared; any other entity not in the UUID list is credited at its item form (`getPickResult`; an item frame's is its framed item, so the frame is valued by type) plus contents (`Container` slots, armor stand equipment, else the NeoForge entity item handler) and discarded if that is worth anything. Players and mobs are never swept (armor stands are), nor container entities with an unrolled loot table. A container entity is emptied before `discard()`: `DISCARDED` counts as destroyed, so a chest minecart or chest boat would spill its contents.
@@ -55,7 +55,7 @@ A `LevelChunk.setBlockState` mixin setting dirty-section bits as a pre-filter, n
 
 ## Online inventories (#57)
 
-- `controller.Prestige.convertInventory(player, credit)` is the one place a player's inventory is converted, used by `Prestige.run` (every online player, after their ender chest, before the starting items) and by `MissedPrestige` (on rejoin). It credits at full value, then wipes: the `Inventory` container (main, armour, offhand), the 2x2 crafting grid and the stack on the cursor.
+- `controller.Prestige.convertInventory(player, credit)` is the one place a player's inventory is converted, used by `Prestige.run` (every online player, after their ender chest; the starting items come with the choice) and by `MissedPrestige` (on rejoin, or on joining mid-choice). It credits at full value, then wipes: the `Inventory` container (main, armour, offhand), the 2x2 crafting grid and the stack on the cursor.
 - An open menu (a crafting table, an anvil, a modded machine's input slots) is closed with `ServerPlayer.closeContainer()` after the inventory is emptied: each menu hands back the slots that are the player's to take (and the cursor) into the now-empty inventory, which is credited again. Block-entity containers keep their contents (the sweep has already taken those in the Run area). Nothing generic iterates menu slots, so a menu's result or preview slots (a crafting result, the Transmutation Tablet's knowledge slots) are never credited.
 - Starting items must be worth 0 EMC (the Pack pins the Transmutation Tablet at 0 in ProjectE's `custom_emc.json`): they are converted with the rest of the inventory, then handed out again, so a valued starting item would mint EMC on every Prestige. The GameTests set the same 0 through `src/test/config/ProjectE/custom_emc.json`, which `runGameTestServer` copies into `run/config/` (a `pe_custom_conversions` value must be positive).
 
@@ -63,9 +63,9 @@ A `LevelChunk.setBlockState` mixin setting dirty-section bits as a pre-filter, n
 
 - **A Prestige clears respawn points.** `RunAreas.teleport` resets every moved player's respawn point (`setRespawnPosition(OVERWORLD, null, ...)`), so they respawn at the new Run area's world spawn; a bed or respawn anchor from an earlier Run is forgotten, and one in the new area must be set again.
 - **GregTech is a `compileOnly` and dev-runtime dependency**, needed by the GT recipe EMC mapper (#52) and for crediting a GT recipe in progress (#30). This replaces #30's constraint that GT be a test-only dependency. The mod still runs without GT: GT classes are only loaded by `emc.gt.GtRecipeEmcMapper` (which ProjectE loads only when `gtceu` is installed) and by `sweep.gt.GtRecipesInProgress` (called only when `gtceu` is loaded). GT is not published as a dependency (`localRuntime`).
-- **Run areas fall back to ocean centres.** With `runArea.avoidOceans` on, a new Run area is re-picked while its centre is in an ocean; if all 1000 attempts (`RunAreas.MAX_ATTEMPTS`) are oceans, it takes an ocean-centred area anyway and logs a warning, rather than refusing the Prestige (the spawn point gets a stone block).
+- **Run areas fall back to ocean centres.** With `runArea.avoidOceans` on, a Candidate area is re-picked while its centre is in an ocean; if all 1000 attempts (`RunAreas.MAX_ATTEMPTS`) are oceans, it takes an ocean-centred area anyway and logs a warning, rather than refusing the Prestige (the spawn point gets a stone block).
 
 ## Restarts (#32)
 
-- The Run area and visited record (`mcincremental_prestige_run_areas`), the Run snapshot and the EMC balance are `SavedData` on the overworld; the world border is vanilla's, saved in `level.dat`. Nothing else is needed for a Run to survive a restart.
+- The Run area and visited record (`mcincremental_prestige_run_areas`), the Candidate areas on offer (`mcincremental_prestige_candidate_areas`), the Run snapshot and the EMC balance are `SavedData` on the overworld; the world border is vanilla's, saved in `level.dat`. Nothing else is needed for a Run to survive a restart.
 - `gametest.RunRestartGameTests.simulateRestart` stands in for a restart: `saveAllChunks` (forced), then removes every `mcincremental_prestige_*` key from the overworld's `DimensionDataStorage` cache (reflection) so the next read loads from disk, then re-applies the border from the level data. Vanilla's `readSavedData` logs and swallows load errors, so a broken `load` shows up as an empty snapshot (nothing swept), not an exception.

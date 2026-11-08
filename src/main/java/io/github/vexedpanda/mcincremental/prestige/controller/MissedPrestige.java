@@ -52,7 +52,8 @@ public final class MissedPrestige {
 
     /**
      * On join, before the starting-items top-up (which would otherwise be credited): a player who missed a Prestige
-     * catches up; a player joining for the first time joins the current Run as they are.
+     * catches up; a player joining for the first time joins the current Run as they are. While Candidate areas are
+     * offered, see {@link #joinMidChoice}.
      */
     @SubscribeEvent(priority = EventPriority.HIGH)
     static void onPlayerJoin(EntityJoinLevelEvent event) {
@@ -61,10 +62,39 @@ public final class MissedPrestige {
         var server = player.getServer();
         RunArea area = RunAreas.current(server).orElse(null);
         if (area == null) return;
+        if (CandidateAreas.isOffered(server)) {
+            joinMidChoice(player);
+            return;
+        }
         if (player.hasData(LAST_RUN) && player.getData(LAST_RUN) < RunAreas.runNumber(server)) {
             catchUp(player, area);
         }
         joinCurrentRun(player);
+    }
+
+    /**
+     * A player joining while Candidate areas are offered: one the pending Prestige hasn't converted yet has their
+     * inventory and ender chest credited and wiped now, as at the sweep (a first-time player joins as they are). They
+     * are then shown the candidates and held still like everyone else ({@link ChoosingFreeze}) until the choice moves
+     * them to the new Run area, where they get the starting items.
+     */
+    private static void joinMidChoice(ServerPlayer player) {
+        var server = player.getServer();
+        if (!CandidateAreas.isConverted(server, player.getUUID())) {
+            if (player.hasData(LAST_RUN)) {
+                EmcCredit credit = new EmcCredit();
+                credit.addAndClear(player.getEnderChestInventory());
+                Prestige.convertInventory(player, credit);
+                credit.creditTo(server);
+                McIncrementalPrestige.LOGGER.info("{} missed a Prestige and joined while its Candidate areas are offered: credited {}",
+                        player.getScoreboardName(), credit);
+            } else {
+                // A first-time player: recorded in the current Run, so a rejoin after the choice catches them up.
+                joinCurrentRun(player);
+            }
+            CandidateAreas.markConverted(server, player.getUUID());
+        }
+        CandidateAreas.list(player);
     }
 
     private static void catchUp(ServerPlayer player, RunArea area) {

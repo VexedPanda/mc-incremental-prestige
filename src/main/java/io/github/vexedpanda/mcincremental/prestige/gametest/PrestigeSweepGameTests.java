@@ -54,7 +54,7 @@ public class PrestigeSweepGameTests {
                     level(helper).setBlockAndUpdate(pos, Blocks.DIAMOND_BLOCK.defaultBlockState());
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level(helper).getBlockState(pos).isAir(),
                             "The placed diamond block should be swept, found " + level(helper).getBlockState(pos));
@@ -89,7 +89,7 @@ public class PrestigeSweepGameTests {
                     level.setBlockAndUpdate(placed, Blocks.AMETHYST_BLOCK.defaultBlockState());
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(ore).is(Blocks.DIAMOND_ORE),
                             "Untouched ore should be kept, found " + level.getBlockState(ore));
@@ -129,7 +129,7 @@ public class PrestigeSweepGameTests {
                     helper.assertTrue(level.getBlockState(fence).getValue(FenceBlock.EAST),
                             "The original fence should have connected to the new one");
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(crop).is(Blocks.WHEAT), "Grown wheat should be kept, found "
                             + level.getBlockState(crop));
@@ -155,7 +155,7 @@ public class PrestigeSweepGameTests {
             // The first area is not snapshotted any more: a block placed there now is never swept.
             BlockPos pos = surface(helper, first);
             level(helper).setBlockAndUpdate(pos, Blocks.DIAMOND_BLOCK.defaultBlockState());
-            PrestigeGameTests.runPrestigeCommand(helper);
+            PrestigeGameTests.runPrestigeAndChoose(helper);
             helper.assertTrue(level(helper).getBlockState(pos).is(Blocks.DIAMOND_BLOCK),
                     "A Run area from before the last Run start should never be swept");
             level(helper).setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
@@ -181,7 +181,7 @@ public class PrestigeSweepGameTests {
                             && barrel.configure(new ItemStack(Items.DIAMOND)), "The barrel should take diamonds");
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(pos).isAir(), "The barrel should be swept, found "
                             + level.getBlockState(pos));
@@ -204,7 +204,7 @@ public class PrestigeSweepGameTests {
                     level.setBlockAndUpdate(pos, EmcIntakes.BLOCK.get().defaultBlockState());
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(pos).isAir(), "The intake should be swept, found "
                             + level.getBlockState(pos));
@@ -227,7 +227,7 @@ public class PrestigeSweepGameTests {
                     helper.assertTrue(level.addFreshEntity(dropped), "The dropped diamonds should spawn");
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(dropped.isRemoved(), "The dropped diamonds should be swept");
                     // ProjectE's default value for a diamond: 8192.
@@ -248,7 +248,7 @@ public class PrestigeSweepGameTests {
             level.setBlockAndUpdate(leaked, Blocks.LAVA.defaultBlockState());
             BigInteger before = WorldEmc.balance(server);
 
-            PrestigeGameTests.runPrestigeCommand(helper);
+            PrestigeGameTests.runPrestigeAndChoose(helper);
 
             helper.assertTrue(level.getBlockState(leaked).isAir(),
                     "The lava source leaked into the margin should be swept, found " + level.getBlockState(leaked));
@@ -284,7 +284,7 @@ public class PrestigeSweepGameTests {
                     }
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     for (Entity entity : new Entity[] {minecart, itemFrame, armorStand}) {
                         helper.assertTrue(entity.isRemoved(), entity + " should be swept");
@@ -325,7 +325,7 @@ public class PrestigeSweepGameTests {
                     RunRestartGameTests.simulateRestart(server);
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     try {
                         helper.assertFalse(original.isRemoved(), "The chest minecart present at Run start should be kept");
@@ -346,7 +346,7 @@ public class PrestigeSweepGameTests {
 
     /** Prestiges to start a Run in a new Run area and returns it. */
     static RunArea startRun(GameTestHelper helper) {
-        PrestigeGameTests.runPrestigeCommand(helper);
+        PrestigeGameTests.runPrestigeAndChoose(helper);
         return RunAreas.current(helper.getLevel().getServer()).orElseThrow(() -> new GameTestAssertException("No Run area"));
     }
 
