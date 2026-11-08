@@ -90,13 +90,14 @@ public class CandidateScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Chat (and commands, e.g. /prestige choose) stays usable; the screen comes back when chat closes.
+        // Chat (and commands, e.g. /prestige choose) stays usable; the screen comes back when chat closes. Opened on
+        // the next frame, as vanilla does, so this key's typed character doesn't land in the chat box.
         if (minecraft.options.keyChat.matches(keyCode, scanCode)) {
-            minecraft.setScreen(new ChatScreen(""));
+            minecraft.tell(() -> minecraft.setScreen(new ChatScreen("")));
             return true;
         }
         if (minecraft.options.keyCommand.matches(keyCode, scanCode)) {
-            minecraft.setScreen(new ChatScreen("/"));
+            minecraft.tell(() -> minecraft.setScreen(new ChatScreen("/")));
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
