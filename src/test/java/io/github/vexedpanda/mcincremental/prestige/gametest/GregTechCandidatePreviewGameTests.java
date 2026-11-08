@@ -101,7 +101,7 @@ public class GregTechCandidatePreviewGameTests {
 
     /** Whether the candidate line's veins (argument 4) name a vein type of this name. */
     private static boolean listsVein(Component line, String name) {
-        Object veins = ((TranslatableContents) line.getContents()).getArgs()[4];
+        Object veins = ((TranslatableContents) line.getContents()).getArgs()[2];
         return veins instanceof Component component && namesVein(component, name);
     }
 

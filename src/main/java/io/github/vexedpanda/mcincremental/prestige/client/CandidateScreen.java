@@ -10,7 +10,6 @@ import io.github.vexedpanda.mcincremental.prestige.network.CandidatesPayload;
 import io.github.vexedpanda.mcincremental.prestige.network.ChooseCandidatePayload;
 import io.github.vexedpanda.mcincremental.prestige.preview.CandidatePreview;
 import io.github.vexedpanda.mcincremental.prestige.preview.OreVein;
-import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
@@ -140,12 +139,9 @@ public class CandidateScreen extends Screen {
 
     /** Every line of a candidate's card, in order. */
     static List<Component> lines(int number, CandidateArea candidate) {
-        RunArea area = candidate.area();
         CandidatePreview preview = candidate.preview();
         List<Component> lines = new ArrayList<>();
         lines.add(Component.translatable(KEY + "candidate", number, biomeName(preview)).withStyle(ChatFormatting.BOLD));
-        lines.add(Component.translatable(KEY + "position", (int) Math.floor(area.middleX()), (int) Math.floor(area.middleZ()))
-                .withStyle(ChatFormatting.GRAY));
         lines.add(Component.translatable(KEY + "veins").withStyle(ChatFormatting.GOLD));
         if (preview.veins().isEmpty()) lines.add(Component.translatable(CandidateAreas.NONE_KEY).withStyle(ChatFormatting.DARK_GRAY));
         for (OreVein vein : preview.veins()) lines.add(veinText(vein));
