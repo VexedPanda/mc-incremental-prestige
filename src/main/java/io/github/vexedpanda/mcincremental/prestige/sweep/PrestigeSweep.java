@@ -93,13 +93,13 @@ public final class PrestigeSweep {
             FluidState fluid = state.getFluidState();
             boolean valuedSource = fluid.isSource() && FluidEmc.hasValue(fluid.getType());
             if (value.signum() <= 0 && blockEntity == null && !valuedSource) continue;
-            credit.addEmc(value);
+            credit.addItem(new ItemStack(state.getBlock().asItem()), value);
             if (valuedSource) credit.addFluid(fluid.getType(), FluidType.BUCKET_VOLUME);
             swept.add(pos);
         }
         for (BlockPos pos : swept) remove(level, pos);
         sweepFluidSources(level, changed, credit);
-        credit.addEmc(sweepEntities(level, snapshot, area));
+        sweepEntities(level, snapshot, area, credit);
         snapshot.clear();
         return credit;
     }
@@ -141,9 +141,9 @@ public final class PrestigeSweep {
     /**
      * Credits and removes entities in the swept chunks (entities phase, #31): every dropped item, whenever it appeared,
      * and every other entity holding value (item form plus contents) that wasn't there at Run start, such as a chest
-     * minecart, item frame or armor stand placed during the Run. Returns the EMC credited.
+     * minecart, item frame or armor stand placed during the Run. Credits them to {@code credit}.
      */
-    private static BigInteger sweepEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area) {
+    private static void sweepEntities(ServerLevel level, RunSnapshotData snapshot, RunArea area, EmcCredit credit) {
         // Entities are only seen in accessible chunks: hold the swept chunks ticking while collecting them.
         List<Entity> inBox = RunSnapshots.whileTicking(level, area.centre(), area.radiusChunks() + snapshot.marginChunks, () -> {
             List<Entity> found = new ArrayList<>();
@@ -152,23 +152,20 @@ public final class PrestigeSweep {
             }
             return found;
         });
-        BigInteger total = BigInteger.ZERO;
         for (Entity entity : inBox) {
             if (entity.isRemoved()) continue;
-            BigInteger value;
             if (entity instanceof ItemEntity item) {
-                value = ItemEmc.stackValue(item.getItem());
+                credit.addItem(item.getItem());
             } else {
                 if (snapshot.entities.contains(entity.getUUID()) || !isSweepable(entity)) continue;
-                value = entityValue(entity);
+                BigInteger value = entityValue(entity);
                 if (value.signum() <= 0) continue;
                 // Discarding a container entity spills its contents: they are credited, so empty it first.
                 if (entity instanceof Container container) container.clearContent();
+                credit.addEmc(value);
             }
-            total = total.add(value);
             entity.discard();
         }
-        return total;
     }
 
     /**

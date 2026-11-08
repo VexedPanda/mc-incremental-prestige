@@ -1,5 +1,6 @@
 package io.github.vexedpanda.mcincremental.prestige.intake;
 
+import io.github.vexedpanda.mcincremental.prestige.discovery.Discovery;
 import io.github.vexedpanda.mcincremental.prestige.emc.ItemEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import moze_intel.projecte.api.proxy.IEMCProxy;
@@ -37,7 +38,7 @@ final class EmcIntakeItemHandler implements IItemHandler {
         if (server == null || stack.isEmpty() || !isItemValid(slot, stack)) return stack;
         if (!simulate) {
             WorldEmc.addEmc(server, ItemEmc.stackValue(stack));
-            WorldEmc.learn(server, stack);
+            Discovery.discover(server, stack);
         }
         return ItemStack.EMPTY;
     }
