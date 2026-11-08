@@ -40,6 +40,12 @@ The previews found, on that real world: the GT veins of each area (e.g. `gtceu:c
 - **Joining mid-choice:** `MissedPrestige` converts a returning player the pending Prestige hasn't converted yet (inventory and ender chest, credited at full value), then lists the candidates. A first-time player joins as they are. Either way they are moved by the choice like everyone else.
 - **Portals stay closed:** the old Run is still the current one until the choice.
 
+## Stopping the server
+
+Vanilla 1.21.1's stop removes the chunk tickets, then ticks the chunk maps with no time limit until they have no work. A chunk load still pending on the IO worker at that moment is cancelled, but its generation task keeps its claim on the chunks around it until the main thread runs the load's last step, and `ChunkMap.processUnloads` re-queues a claimed chunk forever without returning: the server hangs at "Saving worlds". The GameTest server hit this in 2 of 3 runs once previews made every Prestige generate 27 chunks. The heap of a hung server held one `ChunkGenerationTask`, cancelled while loading a chunk next to the test world's spawn. The trigger was `PrestigeGameTests.saveWorld`'s restore: `setDefaultSpawnPos` only moves the spawn's START ticket, so the spawn chunks (unloaded while a chosen Run area held the spawn) reloaded from disk in the background, behind the saves of the generated candidate chunks. The restore now waits for those loads (`PrestigeGameTests.loadSpawnChunks`, each chunk to the status the ticket gives it). The previews themselves never leave generation in flight: `CandidatePreviews` requests each chunk synchronously, and the request completes only when the chunk and everything it depends on are generated.
+
+`RunAreas.beginRun` has the same exposure in a real world: it moves the world spawn and nothing waits for the new spawn chunks, so a `/stop` within moments of a choice could hang the same way. This predates the previews and isn't changed here.
+
 ## Saved state
 
 `controller.CandidateAreaData` (`mcincremental_prestige_candidate_areas`, on the overworld): the candidates grouped by dimension, with their previews, and the UUIDs of the players the pending Prestige has converted. Both survive a restart, so a restart mid-choice neither loses the candidates nor picks one.
