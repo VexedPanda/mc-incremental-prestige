@@ -70,8 +70,7 @@ public class RunRestartGameTests {
                             "The diamond block placed before the restart should be swept, found " + level.getBlockState(placed));
                     helper.assertTrue(level.getBlockState(ground).equals(groundState),
                             "The untouched ground should be kept, found " + level.getBlockState(ground));
-                    // ProjectE's default value for a diamond block: 9 diamonds at 8192.
-                    PrestigeSweepGameTests.assertCredited(helper, before, 73728);
+                    PrestigeSweepGameTests.assertCredited(helper, before, PrestigeSweepGameTests.diamondBlockEmc(helper));
                 }))
                 .thenSucceed();
     }
