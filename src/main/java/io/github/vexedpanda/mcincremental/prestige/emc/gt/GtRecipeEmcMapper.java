@@ -8,7 +8,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -94,24 +93,12 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         return pinned.contains(node);
     }
 
-    /**
-     * The GT recipes whose cost the last mapping split across their outputs by share, with their cost at the seed's
-     * values (which the shares are fractions of), and those split with fixed values.
-     */
-    private static volatile Map<ResourceLocation, Double> split = Map.of();
+    /** The GT recipes whose cost the last mapping split across their outputs by share, and those split with fixed values. */
+    private static volatile Set<ResourceLocation> split = Set.of();
     private static volatile Set<ResourceLocation> fixed = Set.of();
 
     public static boolean isSplitByShare(ResourceLocation recipe) {
-        return split.containsKey(recipe);
-    }
-
-    /**
-     * A recipe split by share: its cost at the seed's values. Its outputs valued elsewhere keep their value, so when its
-     * inputs fall below that, they are worth a larger part of its cost.
-     */
-    public static OptionalDouble seedCost(ResourceLocation recipe) {
-        Double cost = split.get(recipe);
-        return cost == null ? OptionalDouble.empty() : OptionalDouble.of(cost);
+        return split.contains(recipe);
     }
 
     public static boolean isSplitWithFixedValues(ResourceLocation recipe) {
@@ -157,7 +144,7 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         }
         OutputShares shares = OutputShares.find(this, recipes, serverResources, registryAccess, resourceManager);
         pinned = Set.copyOf(shares.pinned);
-        split = Map.copyOf(shares.splitSeedCosts());
+        split = Set.copyOf(shares.splitRecipes(false));
         fixed = Set.copyOf(shares.splitRecipes(true));
         IExtendedMappingCollector<NormalizedSimpleStack, Long, ?> target = extended(collector);
         recipes.nodes.replayInto(target);
