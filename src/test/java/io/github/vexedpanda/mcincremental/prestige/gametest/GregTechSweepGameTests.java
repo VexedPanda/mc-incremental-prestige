@@ -48,13 +48,13 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * The Prestige sweep of GregTech machines, a formed GT multiblock and a GT recipe in progress
  * (VexedPanda/Mc-incremental#30). GregTech is optional at runtime (build.gradle), so tests that use its API live in the
  * test source set; they use it to face the controller, check that the structure formed, and power and tick a machine
- * through a recipe. Contents go in through NeoForge capabilities, as a pipe would. Block EMC values are pinned in
+ * through a recipe. Contents go in through NeoForge capabilities, as a pipe would. Block EMC values (but the heatproof casing's) are pinned in
  * {@code src/test/resources/.../pe_custom_conversions/gametest.json}; fluid values in {@code fluid_emc/gametest.json}.
  */
 @GameTestHolder(McIncrementalPrestige.MODID)
 @PrefixGameTestTemplate(false)
 public class GregTechSweepGameTests {
-    private static final long CASING = 100, COIL = 200, EBF = 5000, ENERGY_HATCH = 300, MAINTENANCE = 400, MUFFLER = 500,
+    private static final long COIL = 200, EBF = 5000, ENERGY_HATCH = 300, MAINTENANCE = 400, MUFFLER = 500,
             INPUT_BUS = 600, OUTPUT_BUS = 700, INPUT_HATCH = 800, ELECTRIC_FURNACE = 900;
 
     @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "sweep_gt_multiblock", timeoutTicks = 1200)
@@ -81,6 +81,10 @@ public class GregTechSweepGameTests {
                     IFluidHandler hatch = level.getCapability(Capabilities.FluidHandler.BLOCK, inputHatch(controller), null);
                     int filled = hatch.fill(new FluidStack(Fluids.LAVA, 4000), IFluidHandler.FluidAction.EXECUTE);
                     helper.assertTrue(filled == 4000, "The input hatch should take 4000 mB of lava, took " + filled);
+                    // The heatproof casing is valued from its GT recipes, not pinned: a pin applied after ProjectE's
+                    // mapping would leave its macerator recycling recipe gaining in the sweep of GT recipes.
+                    long casing = IEMCProxy.INSTANCE.getValue(gt("heatproof_machine_casing").asItem());
+                    helper.assertTrue(casing > 0, "The heatproof machine casing needs EMC, got " + casing);
                     BigInteger before = WorldEmc.balance(server);
 
                     PrestigeGameTests.runPrestigeCommand(helper);
@@ -91,7 +95,7 @@ public class GregTechSweepGameTests {
                     }
                     PrestigeSweepInventoryGameTests.assertNoItemEntities(helper, area);
                     // 11 casings, 16 coils, the controller, 5 hatches and buses; 10 iron, 3 diamonds; 4000 mB lava.
-                    assertCredited(helper, before, 11 * CASING + 16 * COIL + EBF + ENERGY_HATCH + MAINTENANCE + MUFFLER
+                    assertCredited(helper, before, 11 * casing + 16 * COIL + EBF + ENERGY_HATCH + MAINTENANCE + MUFFLER
                             + INPUT_BUS + OUTPUT_BUS + INPUT_HATCH + 10 * 256L + 3 * 8192L + 6000);
                 }))
                 .thenSucceed();

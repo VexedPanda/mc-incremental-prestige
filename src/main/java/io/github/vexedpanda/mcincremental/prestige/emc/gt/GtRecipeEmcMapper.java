@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -23,7 +24,6 @@ import com.gregtechceu.gtceu.api.recipe.ingredient.EnergyStack;
 import com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient;
 import com.gregtechceu.gtceu.utils.GTUtil;
 
-import io.github.vexedpanda.mcincremental.prestige.Config;
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
@@ -71,9 +71,9 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
  *       fluid gets no fixed value: it is valued only through GT recipes that make it (e.g. a fluid extractor melting an
  *       ingot), and that value is published for {@link FluidEmc} ({@link FluidEmc#derivedValueKey}), so a tank of it
  *       is worth what the recipes cost it at.</li>
- *   <li>When the common config's rates are set (VexedPanda/Mc-incremental#67), a recipe's EU and machine time are
- *       added to its inputs' cost at its tier, and crafting recipes that use a GT tool are mapped, with the tool not
- *       consumed ({@link Recipes#readToolCrafting}). With them off, values are v0.3.0's.</li>
+ *   <li>A recipe's EU and machine time are added to its inputs' cost at its tier, at built-in rates ({@link #euPrice},
+ *       {@link #timeRate}; VexedPanda/Mc-incremental#67, #71), and crafting recipes that use a GT tool are mapped, with
+ *       the tool not consumed ({@link Recipes#readToolCrafting}).</li>
  *   <li>A conversion never makes its output free ({@link NeverFreeArithmetic}).</li>
  * </ul>
  *
@@ -94,12 +94,24 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         return pinned.contains(node);
     }
 
-    /** The GT recipes whose cost the last mapping split across their outputs by share, and with fixed values. */
-    private static volatile Set<ResourceLocation> split = Set.of();
+    /**
+     * The GT recipes whose cost the last mapping split across their outputs by share, with their cost at the seed's
+     * values (which the shares are fractions of), and those split with fixed values.
+     */
+    private static volatile Map<ResourceLocation, Double> split = Map.of();
     private static volatile Set<ResourceLocation> fixed = Set.of();
 
     public static boolean isSplitByShare(ResourceLocation recipe) {
-        return split.contains(recipe);
+        return split.containsKey(recipe);
+    }
+
+    /**
+     * A recipe split by share: its cost at the seed's values. Its outputs valued elsewhere keep their value, so when its
+     * inputs fall below that, they are worth a larger part of its cost.
+     */
+    public static OptionalDouble seedCost(ResourceLocation recipe) {
+        Double cost = split.get(recipe);
+        return cost == null ? OptionalDouble.empty() : OptionalDouble.of(cost);
     }
 
     public static boolean isSplitWithFixedValues(ResourceLocation recipe) {
@@ -128,37 +140,32 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
     public void addMappings(IMappingCollector<NormalizedSimpleStack, Long> collector, ReloadableServerResources serverResources,
             RegistryAccess registryAccess, ResourceManager resourceManager) {
         Recipes recipes;
-        Rates rates = Rates.fromConfig();
         NSSFake.setCurrentNamespace(McIncrementalPrestige.MODID + ":gt_recipes");
         try {
-            recipes = new Recipes(rates);
+            recipes = new Recipes();
             for (var type : BuiltInRegistries.RECIPE_TYPE) {
                 if (!(type instanceof GTRecipeType gtType)) continue;
                 for (RecipeHolder<GTRecipe> holder : serverResources.getRecipeManager().getAllRecipesFor(gtType)) {
                     recipes.read(holder.value());
                 }
             }
-            if (rates.on()) {
-                for (var holder : serverResources.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
-                    recipes.readToolCrafting(holder, registryAccess);
-                }
+            for (var holder : serverResources.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
+                recipes.readToolCrafting(holder, registryAccess);
             }
         } finally {
             NSSFake.resetNamespace();
         }
         OutputShares shares = OutputShares.find(this, recipes, serverResources, registryAccess, resourceManager);
         pinned = Set.copyOf(shares.pinned);
-        split = Set.copyOf(shares.splitRecipes(false));
+        split = Map.copyOf(shares.splitSeedCosts());
         fixed = Set.copyOf(shares.splitRecipes(true));
         IExtendedMappingCollector<NormalizedSimpleStack, Long, ?> target = extended(collector);
         recipes.nodes.replayInto(target);
         int dropped = shares.emit(target);
         McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: mapped {} GT recipes, skipped {}", recipes.splits.size(),
                 recipes.skipped);
-        if (rates.on()) {
-            McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: EU and machine time added to {} GT recipes; mapped {} "
-                    + "crafting recipes that use a GT tool", recipes.timed, recipes.toolCrafting);
-        }
+        McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: EU and machine time added to {} GT recipes; mapped {} "
+                + "crafting recipes that use a GT tool", recipes.timed, recipes.toolCrafting);
         if (dropped > 0) {
             McIncrementalPrestige.LOGGER.error("GT recipe EMC mapper: {} recipe outputs left out because their amounts "
                     + "don't fit ProjectE's conversions", dropped);
@@ -207,15 +214,13 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         private final Map<Set<NormalizedSimpleStack>, NormalizedSimpleStack> groups = new HashMap<>();
         /** A fake node pinned at 1 EMC: a fixed value is a conversion from that many of it. */
         private final NormalizedSimpleStack unit = NSSFake.create("emc unit");
-        private final Rates rates;
         /** GT recipes given an EU and machine-time cost, and crafting recipes mapped because they use a GT tool. */
         int timed;
         int toolCrafting;
         /** The crafting recipes that use a GT tool, by output (also in {@link #nodes}). */
         final Map<NormalizedSimpleStack, List<RecordingCollector.Row>> toolCrafts = new HashMap<>();
 
-        Recipes(Rates rates) {
-            this.rates = rates;
+        Recipes() {
             nodes.setValueBefore(unit, 1L);
         }
 
@@ -254,17 +259,16 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
 
         /**
          * Adds the recipe's EU and machine time to its consumed inputs (VexedPanda/Mc-incremental#67): EU per run (EU per
-         * tick, voltage x amperage, x duration) x the EU price, plus its duration in seconds x the time rate, both at the
+         * tick, voltage x amperage, x duration) x {@link #euPrice}, plus its duration in seconds x {@link #timeRate}, both at the
          * recipe's tier (its EU voltage's; ULV when it uses no EU). Generator recipes (EU out) add nothing, and neither do
          * a fusion recipe's start energy (not per tick) or overclocks and parallels. The cost goes in as a fake input worth
          * it in thousandths of an EMC, so it is split across the outputs with the materials.
          */
         private void addEuAndTime(GTRecipe recipe, Map<NormalizedSimpleStack, BigFraction> in) {
-            if (!rates.on() || !recipe.getOutputEUt().isEmpty()) return;
+            if (!recipe.getOutputEUt().isEmpty()) return;
             EnergyStack eu = recipe.getInputEUt();
             int tier = eu.isEmpty() ? GTValues.ULV : GTUtil.getTierByVoltage(eu.voltage());
-            double cost = (double) eu.getTotalEU() * recipe.duration * rates.euPrice(tier)
-                    + recipe.duration / 20.0 * rates.timeRate(tier);
+            double cost = (double) eu.getTotalEU() * recipe.duration * euPrice(tier) + recipe.duration / 20.0 * timeRate(tier);
             long thousandths = Math.round(cost * 1000);
             if (thousandths <= 0) return;
             NormalizedSimpleStack node = NSSFake.create("eu and time " + timed + " " + recipe.id);
@@ -275,8 +279,8 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
 
         /**
          * A crafting-table recipe that uses a GT tool, which ProjectE doesn't map: the tool comes back damaged, so it is
-         * left out (not consumed), and the craft takes no machine time. Mapped only when EU or time is counted, so it caps
-         * items whose machine route now costs more than their instant craft (VexedPanda/Mc-incremental#67). Skipped: no
+         * left out (not consumed), and the craft takes no machine time, so it caps items whose machine route costs more than
+         * their instant craft (VexedPanda/Mc-incremental#67). Skipped: no
          * GT tool, special recipes, and other ingredients that leave something behind (buckets, fluid containers).
          */
         void readToolCrafting(RecipeHolder<CraftingRecipe> holder, RegistryAccess registryAccess) {
@@ -516,28 +520,27 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         return GT_TOOL.isInstance(item);
     }
 
-    /** The EMC per EU and per machine-second at each GT tier, from the common config (VexedPanda/Mc-incremental#67). */
-    record Rates(List<? extends Number> euPrices, List<? extends Number> timeRates) {
-        static Rates fromConfig() {
-            Rates rates = new Rates(List.copyOf(Config.EU_PRICE.get()), List.copyOf(Config.TIME_RATE.get()));
-            for (String warning : Config.timeRateWarnings(rates.timeRates())) {
-                McIncrementalPrestige.LOGGER.warn("GT recipe EMC mapper: {}", warning);
-            }
-            return rates;
-        }
+    /**
+     * EMC per EU at each GT voltage tier from ULV (VexedPanda/Mc-incremental#71): the cheapest generator available by
+     * the tier, (fuel EMC + generator time x the time rate) / EU made, from the Pack's
+     * {@code docs/research/emc-pricing/eu_price.py} (rounded down to 4 significant figures). LV and MV gas turbines, a
+     * large steel boiler with large steam turbines at HV, the large gas turbine at EV and IV, the large plasma turbine
+     * from LuV (no cheaper generator is modelled above). ULV takes LV's; a tier past the end takes the last price.
+     */
+    private static final double[] EU_PRICE = {0.006338, 0.006338, 0.003213, 0.001235, 0.0002835, 0.0002835, 9.765625e-05};
 
-        /** Whether EU or time is counted at any tier (off: v0.3.0's values). */
-        boolean on() {
-            return euPrices.stream().anyMatch(n -> n.doubleValue() > 0) || timeRates.stream().anyMatch(n -> n.doubleValue() > 0);
-        }
+    /** EMC per EU at a GT voltage tier ({@link #EU_PRICE}). */
+    public static double euPrice(int tier) {
+        return EU_PRICE[Math.min(Math.max(tier, GTValues.ULV), EU_PRICE.length - 1)];
+    }
 
-        double euPrice(int tier) {
-            return Config.atTier(euPrices, tier);
-        }
-
-        double timeRate(int tier) {
-            return Config.atTier(timeRates, tier);
-        }
+    /**
+     * EMC per machine-second at a GT voltage tier (VexedPanda/Mc-incremental#71): 4 at LV, doubling every tier (ULV 2, ...
+     * MAX 32,768). GT's overclock runs a recipe twice as fast per tier above its own, so doubling keeps an overclocked
+     * recipe from earning more per second than the faster machine's own time.
+     */
+    public static double timeRate(int tier) {
+        return 2.0 * (1L << Math.min(Math.max(tier, GTValues.ULV), GTValues.MAX));
     }
 
     /** One fluid node is 1000 mB. */

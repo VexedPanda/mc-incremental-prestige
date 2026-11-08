@@ -69,6 +69,8 @@ final class OutputShares {
     /** {@link Kind#FIXED}: each own output's weight among the own outputs, and its fixed value per run (null: #52). */
     private final double[][] weights;
     private final double[][] values;
+    /** Each recipe's cost at the seed's values, which its shares are fractions of. */
+    private final double[] seedCosts;
     /** Nodes pinned at a fixed value (by other mappers, or listed fluids). */
     Set<NormalizedSimpleStack> pinned = Set.of();
 
@@ -81,6 +83,16 @@ final class OutputShares {
         shares = new BigFraction[n][];
         weights = new double[n][];
         values = new double[n][];
+        seedCosts = new double[n];
+    }
+
+    /** The recipes split by share, with their cost at the seed's values. */
+    Map<net.minecraft.resources.ResourceLocation, Double> splitSeedCosts() {
+        Map<net.minecraft.resources.ResourceLocation, Double> costs = new HashMap<>();
+        for (int r = 0; r < kinds.length; r++) {
+            if (kinds[r] == Kind.SPLIT && recipes.splits.get(r).id() != null) costs.put(recipes.splits.get(r).id(), seedCosts[r]);
+        }
+        return costs;
     }
 
     /** The recipes whose cost is split across their outputs: by share ({@code fixed} false) or with fixed values. */
@@ -174,6 +186,7 @@ final class OutputShares {
         for (int r = 0; r < splits.size(); r++) {
             Split split = splits.get(r);
             cost[r] = cost(split, seed);
+            seedCosts[r] = cost[r];
             int n = split.outputs().size();
             own[r] = new boolean[n];
             if (!(cost[r] > 0)) continue;
