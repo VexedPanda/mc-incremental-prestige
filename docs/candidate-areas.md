@@ -11,7 +11,7 @@ The world's first Run stays automatic: `Prestige.startFirstRun` takes one candid
 
 ## Candidates
 
-`RunAreas.candidates(server, n)` uses the existing Run-area rules: GT-grid centres 1 to 2 minimum distances from the current area, the config radius, at least `runArea.minDistanceChunks` from every earlier Run area, and no ocean centre (with the existing fallback to an ocean centre when 1000 attempts all fail). Each candidate is also kept that far from the other candidates, so the three are distinct places. Unchosen candidates are never recorded as visited, so a later Prestige can offer them again. For now they are random: the bias towards undiscovered resources (#79) comes later.
+`RunAreas.candidates(server, n)` uses the existing Run-area rules: GT-grid centres 1 to 2 minimum distances from the current area, the config radius, at least `runArea.minDistanceChunks` from every earlier Run area, and no ocean centre (with the existing fallback to an ocean centre when 1000 attempts all fail). Each candidate is also kept that far from the other candidates, so the three are distinct places. Unchosen candidates are never recorded as visited, so a later Prestige can offer them again. Which candidates are offered leans towards undiscovered ores (below).
 
 ## Previews
 
@@ -33,11 +33,26 @@ The chat listing shows each candidate's number, middle, biome, ore veins (vein t
 The previews found, on that real world: the GT veins of each area (e.g. `gtceu:copper` with chalcopyrite, copper, iron and pyrite; `gtceu:magnetite` with gold, magnetite and vanadium magnetite), more ore materials from veins centred outside the area, and structures such as mineshafts, trial chambers and a plains village.
 
 
+## New ores and the bias towards them
+
+Pack ticket #79. Each preview marks the ore materials of its veins that are **new** (`preview.newOres`, sorted; `preview.NewOres`, with the GT side in `preview.gt.GtNewOres`), read from the world's Knowledge when the candidates are offered, so the marks reflect Discovery up to that moment. A GT material is new when both hold:
+
+- **Knowledge lacks it:** Knowledge holds nothing its stone ore block drops when mined with a pickaxe (the block's real loot table, e.g. raw gold for `gtceu:gold_ore`) and none of its ore blocks (any stone type, as silk touch gives). An ore whose drops have no EMC can never be discovered, so it is never new.
+- **The world can harvest it:** Knowledge holds a pickaxe (`minecraft:pickaxes`, or anything that can dig as one) that is the correct tool for its stone ore block. That is the block's vanilla tool tags: `needs_stone_tool`, `needs_iron_tool` or `needs_diamond_tool`, and none means a wooden pickaxe will do. Or Knowledge holds a GT miner (`gtceu:*_miner`: steam, electric and large miners), which mines any ore whatever its tier. A macerator or other processing machine doesn't count: it can't break the block. The bedrock ore miner doesn't either.
+
+Only vein materials are marked, as only veins are listed; ores found outside a listed vein are not.
+
+**Bias:** within each dimension at most one candidate may offer nothing new. `CandidateAreas.offerFresh` picks and previews 3 areas; while more than one offers nothing new, it keeps the first of those and replaces each of the others, in place, with a freshly picked and previewed area. It stops once the rule holds or `CandidateAreas.MAX_EXTRA_AREAS` (6) more areas have been tried, and then offers the best set found (so at most 9 areas, about 18 s on a real world, in the worst case). The rule is waived, with no extra areas, when no ore of a vein that generates in the dimension is new anywhere: everything harvestable is discovered, or the world can't harvest anything yet (no pickaxe known, as in a new world before its first crafted pickaxe is discovered). Without GregTech nothing is new and the rule is always waived.
+
+Every area of one offer is picked with one random forked from the overworld's at the start (`CandidateAreas.pickingRandom`), each far from every area already tried, so generating chunks between picks can't change which areas are picked, and tests can predict every area a re-roll will try (`CandidateAreaGameTests.predictReRoll(server, seed, count)`).
+
+The marks show in the chat listing and on the screen as "Gold (new)" in green, inside the vein's materials.
+
 ## The selection screen
 
 Pack ticket #78. Every online player chooses on a NeoForge client screen, `client.CandidateScreen`; `/prestige choose <n>` and the chat listing stay for consoles, admins and clients without the screen.
 
-- **Layout:** a title and a hint at the top, then one row per dimension (only the Overworld for now) with the dimension's name above 3 cards, and a **Game menu** button at the bottom. A card shows its number and biome, the middle's x and z, its ore veins ("Magnetite vein (Gold, Magnetite)": GT vein ids are their main material's id, and materials use GT's `material.<namespace>.<name>` names) and its structures. A card too small for its preview ends in "..." and shows the whole preview as a tooltip. Cards shrink to fit the window, up to 180 by 150 pixels.
+- **Layout:** a title and a hint at the top, then one row per dimension (only the Overworld for now) with the dimension's name above 3 cards, and a **Game menu** button at the bottom. A card shows its number and biome, its ore veins ("Magnetite vein (Gold (new), Magnetite)": GT vein ids are their main material's id, materials use GT's `material.<namespace>.<name>` names, and new ores are marked in green) and its structures. A card too small for its preview ends in "..." and shows the whole preview as a tooltip. Cards shrink to fit the window, up to 180 by 150 pixels.
 - **Choosing:** clicking a card sends `network.ChooseCandidatePayload(n)`; the server calls `Prestige.choose(server, n)`, so the first choice wins, from the screen or the command, and later clicks do nothing. Any player may choose, with no permission check.
 - **Closing:** `Prestige.choose` sends every player an empty `CandidatesPayload`, which closes their screen.
 - **Reopening:** while the last payload had rows and no screen is showing (Escape, or the pause menu or chat over it was closed), the client sends `network.RequestCandidatesPayload` once a second; the server answers with the current `CandidatesPayload`, which reopens the screen while the choice is open, or closes it for good. The chat key and command key open chat from the screen, and the Game menu button the pause menu, so a player can still talk, type `/prestige choose` or disconnect. The screen doesn't pause the game.
@@ -67,13 +82,16 @@ groups: [ { dimension: "minecraft:overworld",
                             preview: { biome: "minecraft:plains",
                                        veins: [ { type: "gtceu:magnetite_vein", materials: ["gtceu:gold", "gtceu:magnetite"] } ],
                                        ores: ["gtceu:cassiterite", "gtceu:gold", "gtceu:magnetite"],
-                                       structures: ["minecraft:village_plains"] } } ] } ]
+                                       structures: ["minecraft:village_plains"],
+                                       new_ores: ["gtceu:gold"] } } ] } ]
 converted: [ <UUID int arrays> ]
 ```
 
 Groups keep their order, and numbering for `/prestige choose <n>` runs through them in order: only the Overworld group exists for now (3 candidates, numbered 1 to 3). Spec 2 adds Nether and End groups (3 each). `CandidateArea.CODEC` and `CandidatePreview.CODEC` encode it, so the screen's payload can reuse them (`ByteBufCodecs.fromCodec...`). `CandidateAreas.offered` is the numbered list and `CandidateAreas.offeredByDimension` the groups.
 
 ## Tests
+
+New ores (#79, `GregTechCandidateNewOresGameTests`, each with Knowledge set by `GameTests.withKnowledge`): a gold vein is not new to a world knowing only a pickaxe one tier below gold ore's (by its tool tags), is new (in the candidate data and the chat line) once it knows one of its tier, and isn't once it also knows what gold ore drops (raw gold: the GameTest ProjectE config, like the Pack's, turns off the raw ore and ore blacklists and gives raw gold its Pack value); with undiscovered gold veins in the 4th and 5th areas a re-roll tries, candidates 2 and 3 (offering nothing new) are replaced by them; with no ore anywhere, a re-roll still offers 3 candidates from the first 9 areas tried; and with everything discovered the first 3 areas are offered, none marked. Tests that predict the areas of a re-roll for other reasons set Knowledge to nothing, so the bias is waived.
 
 `CandidateScreenGameTests` (#78): the candidates payload's encode and decode round trip, with two dimension rows in a non-default order, keeps the rows, their order and the numbering; and a choose payload from a player, through its codec and its server handler, starts the Run in that candidate's area like `/prestige choose`, then a second one is ignored. The screen itself has no automated test: see the pack README's "What to try".
 

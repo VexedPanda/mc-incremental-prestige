@@ -30,7 +30,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * The Candidate selection screen (#78): one row of cards per dimension, each card one Candidate area with its biome,
- * GT ore veins and structures. Clicking a card sends {@link ChooseCandidatePayload}; the server decides whether it
+ * GT ore veins (ores new to the world marked, #79) and structures. Clicking a card sends {@link ChooseCandidatePayload}; the server decides whether it
  * counts and closes every screen once a choice is made. Holds no game logic: everything shown comes from the {@link
  * CandidatesPayload}. Doesn't pause the game, so the integrated server keeps handling the choice.
  */
@@ -118,12 +118,16 @@ public class CandidateScreen extends Screen {
                 .orElseGet(() -> Component.literal("?"));
     }
 
-    /** GT vein ids are their main material's id, so a vein is named after that material ("Magnetite vein (Gold, Magnetite)"). */
-    static Component veinText(OreVein vein) {
+    /**
+     * GT vein ids are their main material's id, so a vein is named after that material ("Magnetite vein (Gold (new),
+     * Magnetite)"), with the materials the preview marks new in green.
+     */
+    static Component veinText(OreVein vein, CandidatePreview preview) {
         MutableComponent materials = Component.empty();
         for (int i = 0; i < vein.materials().size(); i++) {
             if (i > 0) materials.append(", ");
-            materials.append(materialName(vein.materials().get(i)));
+            ResourceLocation material = vein.materials().get(i);
+            materials.append(preview.isNew(material) ? CandidateAreas.newMark(materialName(material)) : materialName(material));
         }
         return Component.translatable(CandidateAreas.VEIN_KEY, materialName(vein.type()), materials);
     }
@@ -144,7 +148,7 @@ public class CandidateScreen extends Screen {
         lines.add(Component.translatable(KEY + "candidate", number, biomeName(preview)).withStyle(ChatFormatting.BOLD));
         lines.add(Component.translatable(KEY + "veins").withStyle(ChatFormatting.GOLD));
         if (preview.veins().isEmpty()) lines.add(Component.translatable(CandidateAreas.NONE_KEY).withStyle(ChatFormatting.DARK_GRAY));
-        for (OreVein vein : preview.veins()) lines.add(veinText(vein));
+        for (OreVein vein : preview.veins()) lines.add(veinText(vein, preview));
         lines.add(Component.translatable(KEY + "structures").withStyle(ChatFormatting.AQUA));
         if (preview.structures().isEmpty()) lines.add(Component.translatable(CandidateAreas.NONE_KEY).withStyle(ChatFormatting.DARK_GRAY));
         for (ResourceLocation structure : preview.structures()) lines.add(structureName(structure));

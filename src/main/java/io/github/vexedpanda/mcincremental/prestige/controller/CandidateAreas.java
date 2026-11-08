@@ -11,9 +11,11 @@ import java.util.UUID;
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.preview.CandidatePreview;
 import io.github.vexedpanda.mcincremental.prestige.preview.CandidatePreviews;
+import io.github.vexedpanda.mcincremental.prestige.preview.NewOres;
 import io.github.vexedpanda.mcincremental.prestige.preview.OreVein;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
+import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -22,6 +24,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
 
 /**
@@ -32,6 +35,11 @@ import net.minecraft.world.level.Level;
 public final class CandidateAreas {
     /** How many Candidate areas a Prestige offers. */
     public static final int COUNT = 3;
+    /**
+     * How many areas beyond the first {@link #COUNT} a Prestige may try per dimension to offer something new (#79).
+     * Each costs its chunks' generation, about 2 s on a real world.
+     */
+    public static final int MAX_EXTRA_AREAS = 6;
 
     /** Chat heading above the candidates. */
     public static final String HEADING_KEY = McIncrementalPrestige.MODID + ".candidates.heading";
@@ -39,6 +47,8 @@ public final class CandidateAreas {
     public static final String DIMENSION_KEY = McIncrementalPrestige.MODID + ".candidates.dimension";
     /** Chat text for one GT ore vein: its vein type's name and the materials found. */
     public static final String VEIN_KEY = McIncrementalPrestige.MODID + ".candidates.vein";
+    /** Chat text marking an ore material new: the world can harvest it and hasn't discovered it. */
+    public static final String NEW_KEY = McIncrementalPrestige.MODID + ".candidates.new";
     /** Chat text for an empty part of a preview. */
     public static final String NONE_KEY = McIncrementalPrestige.MODID + ".candidates.none";
     /**
@@ -82,22 +92,64 @@ public final class CandidateAreas {
     }
 
     /**
-     * Picks {@link #COUNT} fresh Candidate areas per dimension, reads their previews from their generated chunks and
-     * offers them, replacing any on offer (a re-roll). Players stay held where they are. The previews are read after
-     * every area is picked, as generating chunks must not change which areas are picked.
+     * Picks {@link #COUNT} fresh Candidate areas per dimension, reads their previews from their generated chunks, marks
+     * what each offers that's new ({@link NewOres}) and offers them, replacing any on offer (a re-roll). Players stay
+     * held where they are.
+     *
+     * <p>Biased towards something new (#79): within each dimension at most one candidate may offer nothing new. While
+     * more do, every one of them after the first is replaced by a freshly picked area, until the rule holds or
+     * {@link #MAX_EXTRA_AREAS} more areas have been tried; then the best set found is offered. Waived when no ore of
+     * the dimension is new anywhere ({@link NewOres#anyLeft}). Every area is picked with one random forked at the
+     * start ({@link #pickingRandom}), far from every area already tried, so generating chunks can't change which
+     * areas are picked.
      */
     static void offerFresh(MinecraftServer server) {
         long start = System.nanoTime();
         ServerLevel overworld = server.overworld();
-        List<RunArea> areas = RunAreas.candidates(server, COUNT);
+        RandomSource random = pickingRandom(overworld);
+        NewOres newOres = NewOres.of(overworld);
+        List<RunArea> tried = new ArrayList<>(RunAreas.candidates(server, COUNT, random, List.of()));
         List<CandidateArea> candidates = new ArrayList<>();
-        for (RunArea area : areas) candidates.add(new CandidateArea(area, CandidatePreviews.read(overworld, area)));
+        for (RunArea area : tried) candidates.add(preview(overworld, area, newOres));
+        while (newOres.anyLeft()) {
+            List<Integer> surplus = surplusNothingNew(candidates);
+            int extra = Math.min(surplus.size(), COUNT + MAX_EXTRA_AREAS - tried.size());
+            if (extra <= 0) break;
+            List<RunArea> more = RunAreas.candidates(server, extra, random, tried);
+            tried.addAll(more);
+            for (int i = 0; i < extra; i++) candidates.set(surplus.get(i), preview(overworld, more.get(i), newOres));
+        }
         CandidateAreaData data = CandidateAreaData.get(server);
         data.groups.clear();
         data.groups.put(Level.OVERWORLD, List.copyOf(candidates));
         data.setDirty();
-        McIncrementalPrestige.LOGGER.info("Candidate areas: generated and previewed {} areas in {} ms",
-                candidates.size(), (System.nanoTime() - start) / 1_000_000);
+        McIncrementalPrestige.LOGGER.info("Candidate areas: generated and previewed {} areas in {} ms ({} offering something new)",
+                tried.size(), (System.nanoTime() - start) / 1_000_000,
+                candidates.stream().filter(c -> c.preview().offersSomethingNew()).count());
+    }
+
+    /**
+     * The random a fresh offer picks every area with, forked from the overworld's: seeding the overworld's random
+     * fixes it. Public for tests that predict a re-roll's areas.
+     */
+    public static RandomSource pickingRandom(ServerLevel level) {
+        return RandomSource.create(level.getRandom().nextLong());
+    }
+
+    private static CandidateArea preview(ServerLevel level, RunArea area, NewOres newOres) {
+        return new CandidateArea(area, newOres.mark(CandidatePreviews.read(level, area)));
+    }
+
+    /** The positions of the candidates offering nothing new, except the first such one. */
+    private static List<Integer> surplusNothingNew(List<CandidateArea> candidates) {
+        List<Integer> surplus = new ArrayList<>();
+        boolean first = true;
+        for (int i = 0; i < candidates.size(); i++) {
+            if (candidates.get(i).preview().offersSomethingNew()) continue;
+            if (first) first = false;
+            else surplus.add(i);
+        }
+        return surplus;
     }
 
     /**
@@ -159,11 +211,18 @@ public final class CandidateAreas {
             for (int j = 0; j < vein.materials().size(); j++) {
                 if (j > 0) materials.append(", ");
                 // GT's material names are under material.<namespace>.<name>.
-                materials.append(Component.translatable(vein.materials().get(j).toLanguageKey("material")));
+                ResourceLocation material = vein.materials().get(j);
+                Component name = Component.translatable(material.toLanguageKey("material"));
+                materials.append(preview.isNew(material) ? newMark(name) : name);
             }
             text.append(Component.translatable(VEIN_KEY, vein.type().getPath(), materials));
         }
         return text;
+    }
+
+    /** "Gold (new)", in green. Public for the selection screen. */
+    public static Component newMark(Component name) {
+        return Component.translatable(NEW_KEY, name).withStyle(ChatFormatting.GREEN);
     }
 
     /** "village_plains, mineshaft", or "none". */

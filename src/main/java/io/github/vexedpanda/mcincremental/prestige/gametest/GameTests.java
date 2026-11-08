@@ -1,11 +1,15 @@
 package io.github.vexedpanda.mcincremental.prestige.gametest;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.mojang.authlib.GameProfile;
 
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
+import moze_intel.projecte.api.ItemInfo;
 import moze_intel.projecte.api.proxy.IEMCProxy;
 import net.minecraft.gametest.framework.GameTestHelper;
 import javax.annotation.Nullable;
@@ -53,6 +57,27 @@ public final class GameTests {
     public static void assertEmcMapBuilt(GameTestHelper helper) {
         long diamond = IEMCProxy.INSTANCE.getValue(Items.DIAMOND);
         helper.assertTrue(diamond == 8192, "EMC map not rebuilt yet (diamond = " + diamond + ")");
+    }
+
+    /**
+     * Runs {@code body} with the world's Knowledge (items) set to exactly {@code knowledge}, then puts the Knowledge
+     * back as it was, whatever happens. Knowledge is shared by every test and persists in the test world, so a test
+     * that depends on what the world knows sets it with this.
+     */
+    public static void withKnowledge(MinecraftServer server, Collection<ItemStack> knowledge, Runnable body) {
+        Set<ItemInfo> before = WorldEmc.knowledge(server);
+        setKnowledge(server, before, knowledge.stream().map(ItemInfo::fromStack).toList());
+        try {
+            body.run();
+        } finally {
+            setKnowledge(server, WorldEmc.knowledge(server), before);
+        }
+    }
+
+    private static void setKnowledge(MinecraftServer server, Set<ItemInfo> current, Collection<ItemInfo> wanted) {
+        Set<ItemInfo> keep = Set.copyOf(wanted);
+        for (ItemInfo info : current) if (!keep.contains(info)) WorldEmc.forget(server, info.createStack());
+        for (ItemInfo info : wanted) WorldEmc.learn(server, info);
     }
 
     /**
