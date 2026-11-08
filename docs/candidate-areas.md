@@ -1,17 +1,37 @@
 # Candidate areas: a two-step Prestige
 
-Pack `GLOSSARY.md`: **Candidate area**; ADR-0008; spec VexedPanda/Mc-incremental#74, ticket #75. A Prestige no longer picks the next Run area by itself: it offers 3 Candidate areas and the players choose one.
+Pack `GLOSSARY.md`: **Candidate area**; ADR-0008; spec VexedPanda/Mc-incremental#74, tickets #75 (two steps) and #77 (previews). A Prestige no longer picks the next Run area by itself: it offers 3 Candidate areas and the players choose one.
 
 ## The two steps
 
-1. **Prestige** (`/prestige`, or the Prestige item): `controller.Prestige.run` sweeps the old Run area and converts every online player's inventory and ender chest into EMC, as before. Instead of starting a Run, it offers `CandidateAreas.COUNT` (3) Candidate areas from `run.RunAreas.candidates`, lists them in every player's chat, and the world is now **choosing**. No Run area is added, and the border and world spawn stay on the old area.
+1. **Prestige** (`/prestige`, or the Prestige item): `controller.Prestige.run` sweeps the old Run area and converts every online player's inventory and ender chest into EMC, as before. Instead of starting a Run, it offers `CandidateAreas.COUNT` (3) Candidate areas per dimension from `run.RunAreas.candidates`, each with a preview read from its generated chunks (below), lists them in every player's chat, and the world is now **choosing**. No Run area is added, and the border and world spawn stay on the old area.
 2. **Choose** (`/prestige choose <1-3>`, op level 2 like `/prestige`): `Prestige.choose` takes the candidate and starts the Run there with the usual Run start: `RunAreas.beginRun` (record, border, world spawn), the Run snapshot, the starting items (topped up, so a player who joined mid-choice and already got them isn't given a second set), then the teleport. The first choice wins: once chosen nothing is offered, and later choices fail with "No Candidate areas are offered".
 
 The world's first Run stays automatic: `Prestige.startFirstRun` takes one candidate and starts it with no choice.
 
 ## Candidates
 
-`RunAreas.candidates(server, n)` uses the existing Run-area rules: GT-grid centres 1 to 2 minimum distances from the current area, the config radius, at least `runArea.minDistanceChunks` from every earlier Run area, and no ocean centre (with the existing fallback to an ocean centre when 1000 attempts all fail). Each candidate is also kept that far from the other candidates, so the three are distinct places. Unchosen candidates are never recorded as visited, so a later Prestige can offer them again. For now they are random: previews (#77) and the bias towards undiscovered resources (#79) come later.
+`RunAreas.candidates(server, n)` uses the existing Run-area rules: GT-grid centres 1 to 2 minimum distances from the current area, the config radius, at least `runArea.minDistanceChunks` from every earlier Run area, and no ocean centre (with the existing fallback to an ocean centre when 1000 attempts all fail). Each candidate is also kept that far from the other candidates, so the three are distinct places. Unchosen candidates are never recorded as visited, so a later Prestige can offer them again. For now they are random: the bias towards undiscovered resources (#79) comes later.
+
+## Previews
+
+Each candidate is a `controller.CandidateArea`: its `RunArea` and a `preview.CandidatePreview`. `CandidateAreas.offerFresh` picks every area first, then `preview.CandidatePreviews.read` generates each area's chunks in full (`getChunk(x, z, FULL)`, so they are written to disk like any generated chunk and a chosen area is ready) and reads, from the real chunks:
+
+- **Biome:** the biome at the area's middle column, on the surface (`WORLD_SURFACE` heightmap), as a biome id.
+- **Ore veins and ores** (only with GregTech installed; `preview.gt.GtOres`, the only GT-typed class): every GT `OreBlock` in the area's chunk sections (sections with only air, or whose palette can't hold an ore block, are skipped), by GT material. GT records each vein it generates (vein type, origin chunk, centre) in its `ServerCache`, whether or not a map mod is installed; a vein is listed when its centre is in the area and at least one of its definition's materials was found in the area's blocks, with the materials found. Ore blocks aren't tagged with their vein, so a material two veins share counts for both. `ores` lists every GT ore material found, in a listed vein or not.
+- **Structures:** every structure whose start overlaps the area, read from the structure references in the area's chunks: worldgen gives a chunk a reference only for a valid start whose bounding box covers it, so starts in chunks outside the area count too, and no other chunk is loaded.
+
+A preview holds ids only (biome, vein type, material and structure ids, all lists sorted), so it reads the same without GT, just with no veins or ores. If an area's chunks can't be read, its preview has only the biome from the biome source and the Prestige still offers it.
+
+The chat listing shows each candidate's number, middle, biome, ore veins (vein type, then its materials by GT's material names) and structures, under a line naming its dimension.
+
+**Generation time** (logged as `Candidate areas: generated and previewed 3 areas in N ms` on every Prestige and re-roll; 3 areas of 3x3 chunks):
+
+- **Real worldgen** (the dev server with GregTech, a normal world, seed 77, on a shared 4-core cloud container under load ~5.7 from other builds): 6025 ms for the Prestige, then 5958 ms and 6828 ms for two re-rolls, so about 2 s per area. For comparison, that world's first Run area (9 fresh chunks, generated by its Run snapshot) took 3325 ms. Expect less on an idle machine; this is the "few seconds" #74 accepts, paid once per Prestige and once per re-roll. If it grows too slow, generating to `FEATURES` instead of `FULL` (ores are placed at features, references exist before that) would skip lighting.
+- **Superflat GameTest world:** 109 to 1632 ms, median 336 ms, over the 81 offers of one full GameTest run.
+
+The previews found, on that real world: the GT veins of each area (e.g. `gtceu:copper` with chalcopyrite, copper, iron and pyrite; `gtceu:magnetite` with gold, magnetite and vanadium magnetite), more ore materials from veins centred outside the area, and structures such as mineshafts, trial chambers and a plains village.
+
 
 ## While candidates are offered
 
@@ -20,10 +40,30 @@ The world's first Run stays automatic: `Prestige.startFirstRun` takes one candid
 - **Joining mid-choice:** `MissedPrestige` converts a returning player the pending Prestige hasn't converted yet (inventory and ender chest, credited at full value), then lists the candidates. A first-time player joins as they are. Either way they are moved by the choice like everyone else.
 - **Portals stay closed:** the old Run is still the current one until the choice.
 
+## Stopping the server
+
+Vanilla 1.21.1's stop removes the chunk tickets, then ticks the chunk maps with no time limit until they have no work. A chunk load still pending on the IO worker at that moment is cancelled, but its generation task keeps its claim on the chunks around it until the main thread runs the load's last step, and `ChunkMap.processUnloads` re-queues a claimed chunk forever without returning: the server hangs at "Saving worlds". The GameTest server hit this in 2 of 3 runs once previews made every Prestige generate 27 chunks. The heap of a hung server held one `ChunkGenerationTask`, cancelled while loading a chunk next to the test world's spawn. The trigger was `PrestigeGameTests.saveWorld`'s restore: `setDefaultSpawnPos` only moves the spawn's START ticket, so the spawn chunks (unloaded while a chosen Run area held the spawn) reloaded from disk in the background, behind the saves of the generated candidate chunks. The restore now waits for those loads (`PrestigeGameTests.loadSpawnChunks`, each chunk to the status the ticket gives it). The previews themselves never leave generation in flight: `CandidatePreviews` requests each chunk synchronously, and the request completes only when the chunk and everything it depends on are generated.
+
+`RunAreas.beginRun` has the same exposure in a real world: it moves the world spawn and nothing waits for the new spawn chunks, so a `/stop` within moments of a choice could hang the same way. This predates the previews and isn't changed here.
+
 ## Saved state
 
-`controller.CandidateAreaData` (`mcincremental_prestige_candidate_areas`, on the overworld): the candidates in order, and the UUIDs of the players the pending Prestige has converted. Both survive a restart, so a restart mid-choice neither loses the candidates nor picks one. The list is overworld-only for now; #77 groups it by dimension.
+`controller.CandidateAreaData` (`mcincremental_prestige_candidate_areas`, on the overworld): the candidates grouped by dimension, with their previews, and the UUIDs of the players the pending Prestige has converted. Both survive a restart, so a restart mid-choice neither loses the candidates nor picks one.
+
+```
+groups: [ { dimension: "minecraft:overworld",
+            candidates: [ { centre: <ChunkPos long>, radius: <int>,
+                            preview: { biome: "minecraft:plains",
+                                       veins: [ { type: "gtceu:magnetite_vein", materials: ["gtceu:gold", "gtceu:magnetite"] } ],
+                                       ores: ["gtceu:cassiterite", "gtceu:gold", "gtceu:magnetite"],
+                                       structures: ["minecraft:village_plains"] } } ] } ]
+converted: [ <UUID int arrays> ]
+```
+
+Groups keep their order, and numbering for `/prestige choose <n>` runs through them in order: only the Overworld group exists for now (3 candidates, numbered 1 to 3). Spec 2 adds Nether and End groups (3 each). `CandidateArea.CODEC` and `CandidatePreview.CODEC` encode it, so the screen's payload can reuse them (`ByteBufCodecs.fromCodec...`). `CandidateAreas.offered` is the numbered list and `CandidateAreas.offeredByDimension` the groups.
 
 ## Tests
 
-`CandidateAreaGameTests` go through the command: offering 3 and starting no Run, choosing candidate n, a second choice ignored, a re-roll that converts nothing, the candidates surviving `RunRestartGameTests.simulateRestart`, the distance rule, and a player who joins mid-choice being listed the candidates, held and unhurt, then moved and released by the choice. The ocean rule uses the `RunAreas.candidates(server, n, unsuitable)` seam, as the GameTest world is superflat. `MissedPrestigeGameTests` covers a player who missed the sweep and joins mid-choice. Every other Prestige test runs `/prestige` then `/prestige choose 1` (`PrestigeGameTests.runPrestigeAndChoose`), and `PrestigeGameTests.saveWorld` withdraws any candidates left offered, so one failed test can't leave the shared test world mid-choice.
+`CandidateAreaGameTests` go through the command: offering 3 and starting no Run, choosing candidate n, a second choice ignored, a re-roll that converts nothing, the candidates surviving `RunRestartGameTests.simulateRestart`, the distance rule, and a player who joins mid-choice being listed the candidates, held and unhurt, then moved and released by the choice. The ocean rule uses the `RunAreas.candidates(server, n, unsuitable)` seam, as the GameTest world is superflat. `MissedPrestigeGameTests` covers a player who missed the sweep and joins mid-choice.
+
+Previews (#77): the candidates are grouped by dimension and choosing numbers through the groups; every candidate's chunks are generated and its preview has the biome (plains in the superflat test world); a structure start placed in a candidate's chunks is listed in its preview and its chat line, and in no other candidate's (`CandidateAreaGameTests`); a GT vein (ore blocks plus GT's vein record) placed in a candidate is listed with the materials found, and every ore found is listed (`GregTechCandidatePreviewGameTests`, in the test source set as it uses GT's API). The superflat test world has no natural veins, so these tests prepare the chunks of the next re-roll's candidates: `CandidateAreaGameTests.predictReRoll` seeds the overworld's random and picks the areas the re-roll will offer, and `reRoll` re-rolls with the same seed. Every other Prestige test runs `/prestige` then `/prestige choose 1` (`PrestigeGameTests.runPrestigeAndChoose`), and `PrestigeGameTests.saveWorld` withdraws any candidates left offered, so one failed test can't leave the shared test world mid-choice.

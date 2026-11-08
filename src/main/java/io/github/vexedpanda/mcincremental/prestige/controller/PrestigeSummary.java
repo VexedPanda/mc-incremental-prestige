@@ -4,7 +4,6 @@ import java.math.BigInteger;
 import java.util.List;
 
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
-import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -18,10 +17,10 @@ public final class PrestigeSummary {
     private PrestigeSummary() {}
 
     /** {@link Prestige#run}, then the summary and the candidates to every player. @return the candidates offered */
-    public static List<RunArea> runAndAnnounce(MinecraftServer server) {
+    public static List<CandidateArea> runAndAnnounce(MinecraftServer server) {
         boolean reroll = CandidateAreas.isOffered(server);
         BigInteger before = WorldEmc.balance(server);
-        List<RunArea> candidates = Prestige.run(server);
+        List<CandidateArea> candidates = Prestige.run(server);
         BigInteger after = WorldEmc.balance(server);
         Component summary = Component.translatable("mcincremental_prestige.prestige.summary",
                 after.subtract(before).toString(), after.toString());

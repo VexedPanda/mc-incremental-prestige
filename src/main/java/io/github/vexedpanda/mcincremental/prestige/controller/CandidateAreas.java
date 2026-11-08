@@ -1,23 +1,32 @@
 package io.github.vexedpanda.mcincremental.prestige.controller;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.preview.CandidatePreview;
+import io.github.vexedpanda.mcincremental.prestige.preview.CandidatePreviews;
+import io.github.vexedpanda.mcincremental.prestige.preview.OreVein;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
+import io.github.vexedpanda.mcincremental.prestige.run.RunAreas;
 import net.minecraft.Util;
-import net.minecraft.core.Holder;
-import net.minecraft.core.QuartPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.Level;
 
 /**
  * The world's choosing state between the two steps of a Prestige: after the sweep, the world offers
- * {@link #COUNT} Candidate areas until one is chosen ({@link Prestige#choose}). World-global and saved with the world.
+ * {@link #COUNT} Candidate areas per dimension, each with its preview, until one is chosen ({@link Prestige#choose}). World-global and saved with the world.
  * While candidates are offered, every player is held still and unhurt ({@link ChoosingFreeze}). Server thread only.
  */
 public final class CandidateAreas {
@@ -26,19 +35,38 @@ public final class CandidateAreas {
 
     /** Chat heading above the candidates. */
     public static final String HEADING_KEY = McIncrementalPrestige.MODID + ".candidates.heading";
-    /** Chat line for one candidate: its number, its middle's x and z, and the biome at its centre. */
+    /** Chat line naming a dimension, above its candidates. */
+    public static final String DIMENSION_KEY = McIncrementalPrestige.MODID + ".candidates.dimension";
+    /** Chat text for one GT ore vein: its vein type's name and the materials found. */
+    public static final String VEIN_KEY = McIncrementalPrestige.MODID + ".candidates.vein";
+    /** Chat text for an empty part of a preview. */
+    public static final String NONE_KEY = McIncrementalPrestige.MODID + ".candidates.none";
+    /**
+     * Chat line for one candidate: its number, its middle's x and z, the biome at its middle, its GT ore veins and its
+     * structures.
+     */
     public static final String LINE_KEY = McIncrementalPrestige.MODID + ".candidates.line";
 
     private CandidateAreas() {}
 
-    /** The Candidate areas on offer, numbered from 1 in this order; empty when no choice is pending. */
-    public static List<RunArea> offered(MinecraftServer server) {
-        return List.copyOf(CandidateAreaData.get(server).candidates);
+    /** The Candidate areas on offer, numbered from 1 through the dimension groups in order; empty when no choice is pending. */
+    public static List<CandidateArea> offered(MinecraftServer server) {
+        return List.copyOf(CandidateAreaData.get(server).numbered());
+    }
+
+    /**
+     * The Candidate areas on offer grouped by dimension, in group order (only the Overworld for now: Run dimensions
+     * come with spec 2). Empty when no choice is pending.
+     */
+    public static Map<ResourceKey<Level>, List<CandidateArea>> offeredByDimension(MinecraftServer server) {
+        Map<ResourceKey<Level>, List<CandidateArea>> groups = new LinkedHashMap<>();
+        CandidateAreaData.get(server).groups.forEach((dimension, candidates) -> groups.put(dimension, List.copyOf(candidates)));
+        return Collections.unmodifiableMap(groups);
     }
 
     /** Whether the world is between a Prestige and the choice of its next Run area. */
     public static boolean isOffered(MinecraftServer server) {
-        return !CandidateAreaData.get(server).candidates.isEmpty();
+        return !CandidateAreaData.get(server).groups.isEmpty();
     }
 
     /**
@@ -47,28 +75,40 @@ public final class CandidateAreas {
      */
     public static void withdraw(MinecraftServer server) {
         CandidateAreaData data = CandidateAreaData.get(server);
-        data.candidates.clear();
+        data.groups.clear();
         data.converted.clear();
         data.setDirty();
         ChoosingFreeze.release();
     }
 
-    /** Offers {@code candidates}, replacing any on offer (a re-roll). Players stay held where they are. */
-    static void offer(MinecraftServer server, List<RunArea> candidates) {
+    /**
+     * Picks {@link #COUNT} fresh Candidate areas per dimension, reads their previews from their generated chunks and
+     * offers them, replacing any on offer (a re-roll). Players stay held where they are. The previews are read after
+     * every area is picked, as generating chunks must not change which areas are picked.
+     */
+    static void offerFresh(MinecraftServer server) {
+        long start = System.nanoTime();
+        ServerLevel overworld = server.overworld();
+        List<RunArea> areas = RunAreas.candidates(server, COUNT);
+        List<CandidateArea> candidates = new ArrayList<>();
+        for (RunArea area : areas) candidates.add(new CandidateArea(area, CandidatePreviews.read(overworld, area)));
         CandidateAreaData data = CandidateAreaData.get(server);
-        data.candidates.clear();
-        data.candidates.addAll(candidates);
+        data.groups.clear();
+        data.groups.put(Level.OVERWORLD, List.copyOf(candidates));
         data.setDirty();
+        McIncrementalPrestige.LOGGER.info("Candidate areas: generated and previewed {} areas in {} ms",
+                candidates.size(), (System.nanoTime() - start) / 1_000_000);
     }
 
     /**
-     * Takes candidate {@code number} (from 1) and ends the choice: nothing is offered any more and players are
-     * released. Empty, changing nothing, when no candidate has that number (none offered, or already chosen).
+     * Takes candidate {@code number} (from 1, through the groups in order) and ends the choice: nothing is offered any
+     * more and players are released. Empty, changing nothing, when no candidate has that number (none offered, or
+     * already chosen).
      */
     static Optional<RunArea> take(MinecraftServer server, int number) {
-        CandidateAreaData data = CandidateAreaData.get(server);
-        if (number < 1 || number > data.candidates.size()) return Optional.empty();
-        RunArea chosen = data.candidates.get(number - 1);
+        List<CandidateArea> candidates = CandidateAreaData.get(server).numbered();
+        if (number < 1 || number > candidates.size()) return Optional.empty();
+        RunArea chosen = candidates.get(number - 1).area();
         withdraw(server);
         return Optional.of(chosen);
     }
@@ -84,26 +124,53 @@ public final class CandidateAreas {
         if (data.converted.add(player)) data.setDirty();
     }
 
-    /** Lists the candidates on offer in the player's chat, with the command that chooses one. */
+    /** Lists the candidates on offer in the player's chat, by dimension, with their previews and the command that chooses one. */
     static void list(ServerPlayer player) {
         MinecraftServer server = player.getServer();
-        List<RunArea> candidates = offered(server);
-        if (candidates.isEmpty()) return;
-        player.sendSystemMessage(Component.translatable(HEADING_KEY, candidates.size()));
-        ServerLevel level = server.overworld();
-        for (int i = 0; i < candidates.size(); i++) {
-            RunArea area = candidates.get(i);
-            player.sendSystemMessage(Component.translatable(LINE_KEY, i + 1,
-                    (int) Math.floor(area.middleX()), (int) Math.floor(area.middleZ()), biomeName(level, area)));
+        Map<ResourceKey<Level>, List<CandidateArea>> groups = offeredByDimension(server);
+        if (groups.isEmpty()) return;
+        int count = groups.values().stream().mapToInt(List::size).sum();
+        player.sendSystemMessage(Component.translatable(HEADING_KEY, count));
+        int n = 0;
+        for (Map.Entry<ResourceKey<Level>, List<CandidateArea>> group : groups.entrySet()) {
+            player.sendSystemMessage(Component.translatable(DIMENSION_KEY, Component.literal(group.getKey().location().toString())));
+            for (CandidateArea candidate : group.getValue()) {
+                RunArea area = candidate.area();
+                CandidatePreview preview = candidate.preview();
+                player.sendSystemMessage(Component.translatable(LINE_KEY, ++n,
+                        (int) Math.floor(area.middleX()), (int) Math.floor(area.middleZ()), biomeName(preview),
+                        veins(preview), structures(preview)));
+            }
         }
     }
 
-    /** The biome at the area's middle, at sea level, from the biome source (generates nothing). */
-    private static Component biomeName(ServerLevel level, RunArea area) {
-        Holder<Biome> biome = level.getUncachedNoiseBiome(QuartPos.fromBlock((int) Math.floor(area.middleX())),
-                QuartPos.fromBlock(level.getSeaLevel()), QuartPos.fromBlock((int) Math.floor(area.middleZ())));
-        return biome.unwrapKey()
-                .<Component>map(key -> Component.translatable(Util.makeDescriptionId("biome", key.location())))
+    private static Component biomeName(CandidatePreview preview) {
+        return preview.biome()
+                .<Component>map(id -> Component.translatable(Util.makeDescriptionId("biome", id)))
                 .orElseGet(() -> Component.literal("?"));
+    }
+
+    /** "magnetite vein (Gold, Magnetite), ...", or "none". */
+    private static Component veins(CandidatePreview preview) {
+        if (preview.veins().isEmpty()) return Component.translatable(NONE_KEY);
+        MutableComponent text = Component.empty();
+        for (int i = 0; i < preview.veins().size(); i++) {
+            OreVein vein = preview.veins().get(i);
+            if (i > 0) text.append(", ");
+            MutableComponent materials = Component.empty();
+            for (int j = 0; j < vein.materials().size(); j++) {
+                if (j > 0) materials.append(", ");
+                // GT's material names are under material.<namespace>.<name>.
+                materials.append(Component.translatable(vein.materials().get(j).toLanguageKey("material")));
+            }
+            text.append(Component.translatable(VEIN_KEY, vein.type().getPath(), materials));
+        }
+        return text;
+    }
+
+    /** "village_plains, mineshaft", or "none". */
+    private static Component structures(CandidatePreview preview) {
+        if (preview.structures().isEmpty()) return Component.translatable(NONE_KEY);
+        return Component.literal(String.join(", ", preview.structures().stream().map(ResourceLocation::getPath).toList()));
     }
 }

@@ -18,6 +18,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.SimpleMenuProvider;
@@ -26,6 +28,8 @@ import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.CraftingMenu;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.gametest.framework.GameTest;
@@ -416,7 +420,30 @@ public class PrestigeGameTests {
             border.setCenter(x, z);
             border.setSize(size);
             level.setDefaultSpawnPos(spawn, spawnAngle);
+            loadSpawnChunks(level);
         };
+    }
+
+    /**
+     * Loads the chunks the world spawn's ticket keeps, each to the status the ticket gives it, waiting for them.
+     * {@code setDefaultSpawnPos} only moves the ticket, so chunks left behind by a Run area's spawn would otherwise
+     * reload from disk in the background. If the last test ends with such a load in flight, vanilla's stop hangs:
+     * it removes the tickets, which cancels the load, then ticks the chunk maps with no time limit, and a chunk still
+     * claimed by the cancelled load is re-queued forever before the load's last step can run (#77).
+     */
+    static void loadSpawnChunks(ServerLevel level) {
+        ChunkPos centre = new ChunkPos(level.getSharedSpawnPos());
+        // As setDefaultSpawnPos: a START ticket at distance spawnChunkRadius + 1 from full.
+        int ticketLevel = ChunkLevel.byStatus(FullChunkStatus.FULL) - (level.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS) + 1);
+        for (int d = 0; ; d++) {
+            ChunkStatus status = ChunkLevel.generationStatus(ticketLevel + d);
+            if (status == null) return;
+            for (int dx = -d; dx <= d; dx++) {
+                for (int dz = -d; dz <= d; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) == d) level.getChunk(centre.x + dx, centre.z + dz, status, true);
+                }
+            }
+        }
     }
 
     private static ItemStack craft(GameTestHelper helper, Item input) {

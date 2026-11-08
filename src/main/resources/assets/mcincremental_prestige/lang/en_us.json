@@ -17,7 +17,10 @@
   "commands.mcincremental_prestige.prestige.chosen": "Candidate area %s chosen: a new Run has started",
   "commands.mcincremental_prestige.prestige.nothing_offered": "No Candidate areas are offered (already chosen, or no Prestige yet)",
   "mcincremental_prestige.candidates.heading": "Choose where the next Run goes with /prestige choose <1-%s>:",
-  "mcincremental_prestige.candidates.line": "  %s: around x %s, z %s (%s)",
+  "mcincremental_prestige.candidates.dimension": " %s:",
+  "mcincremental_prestige.candidates.line": "  %s: around x %s, z %s (%s). Ore veins: %s. Structures: %s",
+  "mcincremental_prestige.candidates.none": "none",
+  "mcincremental_prestige.candidates.vein": "%s vein (%s)",
 "mcincremental_prestige.discovery.discovered": "Discovered %s: the world can now make it from EMC",
   "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run"
 }
