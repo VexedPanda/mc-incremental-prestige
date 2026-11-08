@@ -128,8 +128,8 @@ public final class RunAreas {
         level.setDefaultSpawnPos(spawnPoint(level, area), 0);
         long start = System.nanoTime();
         int loaded = loadSpawnChunks(level);
-        McIncrementalPrestige.LOGGER.info("Spawn chunks of Run area {} loaded ({} chunks) in {} ms",
-                area.centre(), loaded, (System.nanoTime() - start) / 1_000_000);
+        McIncrementalPrestige.LOGGER.info("Spawn chunks of Run area {} loaded in {} ms ({} chunk requests)",
+                area.centre(), (System.nanoTime() - start) / 1_000_000, loaded);
         return area;
     }
 
