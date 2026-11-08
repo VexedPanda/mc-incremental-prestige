@@ -158,7 +158,7 @@ public class CandidateAreaGameTests {
                             "Candidate " + (i + 1) + " has no buried treasure, got " + offered.get(i).preview().structures());
                 }
                 Component line = candidateLine(messages, 1);
-                helper.assertTrue(line != null && lineArgument(line, 5).contains("buried_treasure"),
+                helper.assertTrue(line != null && lineArgument(line, 3).contains("buried_treasure"),
                         "Candidate 1's chat line should list the buried treasure, got " + line);
             } finally {
                 chunk.setAllStarts(starts);
