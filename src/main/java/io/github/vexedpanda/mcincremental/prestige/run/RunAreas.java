@@ -78,9 +78,7 @@ public final class RunAreas {
      * if {@link RunAreaConfig#AVOID_OCEANS} is on, not centred in an ocean. Records and moves nothing.
      */
     public static List<RunArea> candidates(MinecraftServer server, int count) {
-        ServerLevel level = server.overworld();
-        Predicate<ChunkPos> unsuitable = RunAreaConfig.AVOID_OCEANS.get() ? c -> isOceanCentred(level, c) : c -> false;
-        return candidates(server, count, unsuitable);
+        return candidates(server, count, server.overworld().getRandom(), List.of());
     }
 
     /**
@@ -88,17 +86,34 @@ public final class RunAreas {
      * {@code unsuitable} are re-picked. Public for tests (the GameTest world is superflat, with no oceans).
      */
     public static List<RunArea> candidates(MinecraftServer server, int count, Predicate<ChunkPos> unsuitable) {
+        return candidates(server, count, unsuitable, server.overworld().getRandom(), List.of());
+    }
+
+    /**
+     * {@link #candidates(MinecraftServer, int)} picking with {@code random}, and also keeping the minimum distance from
+     * {@code alsoTaken} (areas already tried for this choice). Picking {@code a} then {@code b} areas this way, with
+     * the first {@code a} in {@code alsoTaken} the second time, gives the same areas as picking {@code a + b} at once.
+     */
+    public static List<RunArea> candidates(MinecraftServer server, int count, RandomSource random, List<RunArea> alsoTaken) {
+        ServerLevel level = server.overworld();
+        Predicate<ChunkPos> unsuitable = RunAreaConfig.AVOID_OCEANS.get() ? c -> isOceanCentred(level, c) : c -> false;
+        return candidates(server, count, unsuitable, random, alsoTaken);
+    }
+
+    private static List<RunArea> candidates(MinecraftServer server, int count, Predicate<ChunkPos> unsuitable,
+            RandomSource random, List<RunArea> alsoTaken) {
         ServerLevel level = server.overworld();
         List<RunArea> visited = RunAreaData.get(server).visited;
         ChunkPos origin = visited.isEmpty() ? new ChunkPos(level.getSharedSpawnPos()) : visited.getLast().centre();
         List<RunArea> taken = new ArrayList<>(visited);
+        taken.addAll(alsoTaken);
         List<RunArea> picked = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            RunArea area = choose(level, origin, taken, unsuitable).orElseGet(() -> {
+            RunArea area = choose(random, origin, taken, unsuitable).orElseGet(() -> {
                 // E.g. the current area is deep in a huge ocean: better an ocean Run area (with a stone spawn block)
                 // than no Prestige.
                 McIncrementalPrestige.LOGGER.warn("Every candidate Run area was unsuitable (ocean); ignoring the check");
-                return choose(level, origin, taken, c -> false).orElseThrow(() -> new IllegalStateException(
+                return choose(random, origin, taken, c -> false).orElseThrow(() -> new IllegalStateException(
                         "No free Run area found after " + MAX_ATTEMPTS + " attempts"));
             });
             taken.add(area);
@@ -216,9 +231,8 @@ public final class RunAreas {
      * area, or the world spawn before the first Run), in a random direction, at least the minimum distance from every
      * {@code taken} area (earlier Run areas and the candidates already picked) and not {@code unsuitable}.
      */
-    private static Optional<RunArea> choose(ServerLevel level, ChunkPos origin, List<RunArea> taken,
+    private static Optional<RunArea> choose(RandomSource random, ChunkPos origin, List<RunArea> taken,
             Predicate<ChunkPos> unsuitable) {
-        RandomSource random = level.getRandom();
         int minDistance = RunAreaConfig.MIN_DISTANCE_CHUNKS.get();
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             double angle = random.nextDouble() * Mth.TWO_PI;

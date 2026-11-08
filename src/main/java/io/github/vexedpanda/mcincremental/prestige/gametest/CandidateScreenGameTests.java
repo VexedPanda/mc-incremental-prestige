@@ -42,7 +42,8 @@ public class CandidateScreenGameTests {
                 Optional.of(id("minecraft", "plains")),
                 List.of(new OreVein(id("gtceu", "magnetite"), List.of(id("gtceu", "gold"), id("gtceu", "magnetite")))),
                 List.of(id("gtceu", "cassiterite"), id("gtceu", "gold"), id("gtceu", "magnetite")),
-                List.of(id("minecraft", "mineshaft"), id("minecraft", "village_plains"))));
+                List.of(id("minecraft", "mineshaft"), id("minecraft", "village_plains")),
+                List.of(id("gtceu", "gold")))); // gold marked new (#79)
         CandidateArea unreadable = new CandidateArea(new RunArea(new ChunkPos(128, 0), 2), CandidatePreview.biomeOnly(Optional.empty()));
         CandidatesPayload sent = new CandidatesPayload(List.of(
                 new CandidatesPayload.Row(Level.NETHER, List.of(fortress)),

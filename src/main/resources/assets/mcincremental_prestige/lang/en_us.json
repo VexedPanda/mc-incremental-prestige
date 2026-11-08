@@ -20,6 +20,7 @@
   "mcincremental_prestige.candidates.dimension": " %s:",
   "mcincremental_prestige.candidates.line": "  %s: %s. Ore veins: %s. Structures: %s",
   "mcincremental_prestige.candidates.none": "none",
+  "mcincremental_prestige.candidates.new": "%s (new)",
   "mcincremental_prestige.candidates.vein": "%s vein (%s)",
   "mcincremental_prestige.discovery.discovered": "Discovered %s: the world can now make it from EMC",
   "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run",

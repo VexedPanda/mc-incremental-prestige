@@ -1,9 +1,13 @@
 {
-  "comment": "GameTest-only (copied into run/config/ProjectE by the prepareGameTestConfig task, never in the jar). As in the Pack, the Transmutation Tablet is worth 0 EMC: the mod gives it to every player for free, so converting it must yield nothing. A value of 0 can only be set here, not in pe_custom_conversions.",
+  "comment": "GameTest-only (copied into run/config/ProjectE by the prepareGameTestConfig task, never in the jar). As in the Pack, the Transmutation Tablet is worth 0 EMC: the mod gives it to every player for free, so converting it must yield nothing. A value of 0 can only be set here, not in pe_custom_conversions. Raw gold, which GT's gold ore drops, has its Pack value (with ProjectE's raw ore blacklist off in mapping.toml, as in the Pack): the Candidate \"new\" ore tests (#79) need it discoverable.",
   "entries": [
     {
       "id": "projecte:transmutation_tablet",
       "emc": 0
+    },
+    {
+      "id": "minecraft:raw_gold",
+      "emc": 5317
     }
   ]
 }

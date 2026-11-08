@@ -145,7 +145,8 @@ public class CandidateAreaGameTests {
             chunk.addReferenceForStructure(treasure, centre.toLong());
             try {
                 messages.clear();
-                reRoll(helper, seed);
+                // Nothing to harvest, so nothing is new and the re-roll offers exactly the predicted areas.
+                GameTests.withKnowledge(server, List.of(), () -> reRoll(helper, seed));
 
                 List<CandidateArea> offered = CandidateAreas.offered(server);
                 helper.assertTrue(offered.stream().map(CandidateArea::area).toList().equals(predicted),
@@ -371,8 +372,17 @@ public class CandidateAreaGameTests {
      * them, so a test can prepare their chunks first; {@link #reRoll} with the same seed then offers exactly these.
      */
     static List<RunArea> predictReRoll(MinecraftServer server, long seed) {
+        return predictReRoll(server, seed, CandidateAreas.COUNT);
+    }
+
+    /**
+     * The first {@code count} areas a re-roll with this seed would try, in order: the {@link CandidateAreas#COUNT} it
+     * offers first, then the ones the bias towards something new (#79) tries in place of candidates offering nothing
+     * new. Picks nothing for real.
+     */
+    static List<RunArea> predictReRoll(MinecraftServer server, long seed, int count) {
         server.overworld().getRandom().setSeed(seed);
-        return RunAreas.candidates(server, CandidateAreas.COUNT);
+        return RunAreas.candidates(server, count, CandidateAreas.pickingRandom(server.overworld()), List.of());
     }
 
     /** Re-rolls the candidates on offer ({@code /prestige} again) with the overworld's random seeded. */

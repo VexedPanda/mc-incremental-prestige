@@ -3,13 +3,7 @@ package io.github.vexedpanda.mcincremental.prestige.gametest;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.gregtechceu.gtceu.api.block.OreBlock;
-import com.gregtechceu.gtceu.api.data.worldgen.GTOreDefinition;
-import com.gregtechceu.gtceu.api.data.worldgen.ores.GeneratedVeinMetadata;
-import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTOreVeins;
-import com.gregtechceu.gtceu.config.ConfigHolder;
-import com.gregtechceu.gtceu.integration.map.cache.server.ServerCache;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
 import io.github.vexedpanda.mcincremental.prestige.controller.CandidateArea;
@@ -17,9 +11,6 @@ import io.github.vexedpanda.mcincremental.prestige.controller.CandidateAreas;
 import io.github.vexedpanda.mcincremental.prestige.preview.CandidatePreview;
 import io.github.vexedpanda.mcincremental.prestige.preview.OreVein;
 import io.github.vexedpanda.mcincremental.prestige.run.RunArea;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
@@ -29,8 +20,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -53,23 +42,13 @@ public class GregTechCandidatePreviewGameTests {
             List<RunArea> predicted = CandidateAreaGameTests.predictReRoll(server, seed);
             ServerLevel level = server.overworld();
             ChunkPos centre = predicted.get(0).centre();
-            level.getChunk(centre.x, centre.z);
             // A magnetite vein centred in candidate 1, with a magnetite ore and a gold ore (both of the vein) and a
             // cassiterite ore (of no vein here).
-            BlockPos base = new BlockPos(centre.getMinBlockX() + 3, level.getMinBuildHeight() + 6, centre.getMinBlockZ() + 3);
-            List<BlockPos> placed = List.of(base, base.east(), base.east(2));
-            List<BlockState> before = placed.stream().map(level::getBlockState).toList();
-            place(helper, level, placed.get(0), "magnetite");
-            place(helper, level, placed.get(1), "gold");
-            place(helper, level, placed.get(2), "cassiterite");
-            Holder<GTOreDefinition> magnetite = level.registryAccess().registryOrThrow(GTRegistries.Keys.ORE_VEIN)
-                    .getHolderOrThrow(GTOreVeins.MAGNETITE_VEIN);
-            int grid = ConfigHolder.INSTANCE.worldgen.oreVeins.oreVeinGridSize;
-            ServerCache.instance.addVein(level.dimension(), Math.floorDiv(centre.x, grid), Math.floorDiv(centre.z, grid),
-                    new GeneratedVeinMetadata(centre, centre.getMiddleBlockPosition(base.getY()), magnetite));
+            Runnable unplace = GtTestVeins.place(helper, level, centre, GTOreVeins.MAGNETITE_VEIN, "magnetite", "gold", "cassiterite");
             try {
                 messages.clear();
-                CandidateAreaGameTests.reRoll(helper, seed);
+                // Nothing to harvest, so nothing is new and the re-roll offers exactly the predicted areas.
+                GameTests.withKnowledge(server, List.of(), () -> CandidateAreaGameTests.reRoll(helper, seed));
 
                 List<CandidateArea> offered = CandidateAreas.offered(server);
                 helper.assertTrue(offered.stream().map(CandidateArea::area).toList().equals(predicted),
@@ -91,8 +70,7 @@ public class GregTechCandidatePreviewGameTests {
                 helper.assertTrue(line != null && listsVein(line, GTOreVeins.MAGNETITE_VEIN.location().getPath()),
                         "Candidate 1's chat line should list the magnetite vein, got " + line);
             } finally {
-                for (int i = 0; i < placed.size(); i++) level.setBlockAndUpdate(placed.get(i), before.get(i));
-                ServerCache.instance.removeAllInChunk(level.dimension(), centre);
+                unplace.run();
                 player.discard();
             }
         });
@@ -112,13 +90,6 @@ public class GregTechCandidatePreviewGameTests {
     }
 
     private static ResourceLocation gt(String path) {
-        return ResourceLocation.fromNamespaceAndPath("gtceu", path);
-    }
-
-    /** Places the stone ore block of a GT material (e.g. {@code gtceu:magnetite_ore}). */
-    private static void place(GameTestHelper helper, ServerLevel level, BlockPos pos, String material) {
-        Block ore = BuiltInRegistries.BLOCK.get(gt(material + "_ore"));
-        helper.assertTrue(ore instanceof OreBlock, "gtceu:" + material + "_ore should be a GT ore block, got " + ore);
-        level.setBlockAndUpdate(pos, ore.defaultBlockState());
+        return GtTestVeins.gt(path);
     }
 }
