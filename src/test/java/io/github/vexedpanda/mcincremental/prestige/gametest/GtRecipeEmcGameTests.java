@@ -179,10 +179,33 @@ public class GtRecipeEmcGameTests {
         GameTests.rebuildEmcMap(helper);
         helper.succeedWhen(() -> {
             GameTests.assertEmcMapBuilt(helper);
-            for (String material : new String[] {"rtm_alloy", "tungsten_steel"}) {
+            for (String material : new String[] {"rtm_alloy", "tungsten_steel", "uranium_235"}) {
                 helper.assertTrue(craftedWithAGtTool(helper, "gtceu:" + material + "_rod"), "Expected a crafting recipe "
                         + "making a " + material + " rod with a GT tool");
                 assertLatheBalanced(helper, material);
+            }
+        });
+    }
+
+    /**
+     * A desulfurization makes its fuel for less than other routes value it (VexedPanda/Mc-incremental#83): its outputs
+     * (the fuel and hydrogen sulfide) are worth no more than its sulfuric fuel and hydrogen plus its EU and time. The fuel
+     * is also distilled out of cracked fuels by single-output distillery recipes, each giving its whole cost to a small
+     * fraction, which would otherwise set its value.
+     */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, timeoutTicks = 600)
+    public static void aDesulfurizationSetsItsFuelsValue(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        helper.succeedWhen(() -> {
+            GameTests.assertEmcMapBuilt(helper);
+            for (String fuel : new String[] {"heavy_fuel", "light_fuel", "naphtha"}) {
+                ResourceLocation id = ResourceLocation.parse("gtceu:chemical_reactor/desulfurize_" + fuel);
+                double[] sides = sides(helper, id);
+                double cost = sides[0] + euAndTime(gtRecipe(helper, id.toString()));
+                McIncrementalPrestige.LOGGER.info("GT recipe EMC: {} costs {} and makes {}", id, String.format("%.1f", cost),
+                        String.format("%.1f", sides[1]));
+                helper.assertTrue(sides[1] <= cost + rounding(cost), id + " should make no more EMC than it costs ("
+                        + String.format("%.1f", cost) + "), made " + String.format("%.1f", sides[1]));
             }
         });
     }
@@ -292,13 +315,12 @@ public class GtRecipeEmcGameTests {
 
     /**
      * Sweeps every GT recipe and compares its outputs' EMC with its consumed inputs' plus its EU and machine time (the
-     * rule of the pack's {@code docs/research/emc-pricing/audit.py}, independent of the mapper). A recipe the mapper split by share (each
-     * output a fixed fraction of the inputs) must not make EMC, beyond rounding, unless its inputs have fallen since the
-     * seed its shares were taken from (VexedPanda/Mc-incremental#71): its outputs valued elsewhere then keep their value,
-     * so it may gain up to that fall's part of its outputs. The others are reported, worst first:
-     * recipes split with fixed values (loops, large or decomposition lowerings), whose values can lag behind their
-     * inputs; pinned outputs alone worth more than the inputs (only re-pricing fixes those); and recipes left unsplit
-     * because their outputs valued elsewhere are worth more than the inputs (see docs/gt-recipe-emc.md).
+     * rule of the pack's {@code docs/research/emc-pricing/audit.py}, independent of the mapper). A recipe the mapper split by
+     * share (each output a fixed fraction of the inputs) must not make EMC beyond rounding (VexedPanda/Mc-incremental#83:
+     * no exemption for inputs that fell since the seed). The others are reported, worst first: recipes split with fixed
+     * values (loops, large or decomposition lowerings), whose values can lag behind their inputs; pinned outputs alone
+     * worth more than the inputs (only re-pricing fixes those); and recipes left unsplit because their outputs valued
+     * elsewhere are worth more than the inputs (see docs/gt-recipe-emc.md).
      */
     @GameTest(template = GameTests.EMPTY_TEMPLATE, timeoutTicks = 1200)
     public static void noSplitGtRecipeMakesMoreEmcThanItConsumes(GameTestHelper helper) {
@@ -310,7 +332,6 @@ public class GtRecipeEmcGameTests {
                         double gain() { return outputs - cost; }
                     }
                     List<Gain> split = new ArrayList<>();
-                    List<Gain> drifted = new ArrayList<>();
                     List<Gain> fixed = new ArrayList<>();
                     List<Gain> pinned = new ArrayList<>();
                     List<Gain> unsplit = new ArrayList<>();
@@ -329,23 +350,17 @@ public class GtRecipeEmcGameTests {
                             if (isSplit) splitChecked++;
                             if (sides[1] - sides[0] <= rounding(sides[0])) continue;
                             Gain gain = new Gain(holder.id().toString(), sides[0], sides[1]);
-                            // Split by share at the seed's cost: when the inputs have since fallen, outputs valued
-                            // elsewhere keep their value and are worth a larger part of the cost. Allowed up to that
-                            // fall's part of the outputs.
-                            double seedCost = GtRecipeEmcMapper.seedCost(holder.id()).orElse(sides[0]);
-                            double fall = Math.max(0, 1 - sides[0] / seedCost);
-                            if (isSplit && sides[1] - sides[0] <= fall * sides[1] + rounding(sides[0])) drifted.add(gain);
-                            else if (isSplit) split.add(gain);
+                            if (isSplit) split.add(gain);
                             else if (isFixed) fixed.add(gain);
                             else if (sides[2] > sides[0]) pinned.add(gain);
                             else unsplit.add(gain);
                         }
                     }
                     McIncrementalPrestige.LOGGER.info("GT recipe EMC: {} GT recipes checked, {} of them split by share; making "
-                            + "more EMC than they consume: {} split by share, {} split by share whose inputs fell since the "
-                            + "seed, {} split with fixed values, {} with pinned outputs worth more than the inputs, {} others",
-                            checked, splitChecked, split.size(), drifted.size(), fixed.size(), pinned.size(), unsplit.size());
-                    for (var group : List.of(Map.entry("split", split), Map.entry("drifted", drifted), Map.entry("fixed", fixed),
+                            + "more EMC than they consume: {} split by share, {} split with fixed values, {} with pinned "
+                            + "outputs worth more than the inputs, {} others",
+                            checked, splitChecked, split.size(), fixed.size(), pinned.size(), unsplit.size());
+                    for (var group : List.of(Map.entry("split", split), Map.entry("fixed", fixed),
                             Map.entry("pinned", pinned), Map.entry("unsplit", unsplit))) {
                         List<Gain> gains = new ArrayList<>(group.getValue());
                         gains.sort(Comparator.comparingDouble(Gain::gain).reversed());
@@ -461,19 +476,41 @@ public class GtRecipeEmcGameTests {
         });
     }
 
+    /**
+     * The laser engraver turns a wafer into RAM wafers; its lens is not consumed, so a RAM wafer costs just its cheapest
+     * engraving's wafer plus EU and time, per RAM wafer (a silicon wafer makes 1, a phosphorus wafer 4).
+     */
     @GameTest(template = GameTests.EMPTY_TEMPLATE, timeoutTicks = 600)
     public static void nonConsumedInputsAddNoCost(GameTestHelper helper) {
         GameTests.rebuildEmcMap(helper);
         helper.succeedWhen(() -> {
             GameTests.assertEmcMapBuilt(helper);
-            // The laser engraver turns a silicon wafer into a RAM wafer; its lens is not consumed.
             long silicon = emc(helper, "gtceu:silicon_wafer");
             long ram = emc(helper, "gtceu:ram_wafer");
             helper.assertTrue(silicon > 0, "The silicon wafer needs EMC for this test to mean anything");
-            double expected = silicon + euAndTime(gtRecipeMaking(helper, "laser_engraver", "gtceu:ram_wafer"));
-            helper.assertTrue(Math.abs(ram - expected) <= rounding(expected), "A RAM wafer should cost just its silicon "
-                    + "wafer (" + silicon + ") plus the engraver's EU and time (" + String.format("%.1f", expected) + "), got "
-                    + ram);
+            double expected = Double.MAX_VALUE;
+            String route = null;
+            var engraver = (GTRecipeType) BuiltInRegistries.RECIPE_TYPE.get(ResourceLocation.parse("gtceu:laser_engraver"));
+            Item ramWafer = BuiltInRegistries.ITEM.get(ResourceLocation.parse("gtceu:ram_wafer"));
+            for (RecipeHolder<GTRecipe> holder : helper.getLevel().getServer().getRecipeManager().getAllRecipesFor(engraver)) {
+                List<Content> outputs = holder.value().outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
+                if (outputs.size() != 1) continue;
+                var output = ItemRecipeCapability.CAP.of(outputs.get(0).content());
+                ItemStack[] items = output.ingredient().getItems();
+                if (items.length != 1 || items[0].getItem() != ramWafer) continue;
+                double[] sides = costAndOutputs(holder.value());
+                if (sides == null) continue;
+                double each = (sides[0] + euAndTime(holder.value())) / output.count();
+                if (each < expected) {
+                    expected = each;
+                    route = holder.id().toString();
+                }
+            }
+            helper.assertTrue(route != null, "Expected a laser engraver recipe making RAM wafers");
+            McIncrementalPrestige.LOGGER.info("GT recipe EMC: RAM wafer {}, cheapest engraving {} ({})", ram,
+                    String.format("%.1f", expected), route);
+            helper.assertTrue(Math.abs(ram - expected) <= rounding(expected), "A RAM wafer should cost just its cheapest "
+                    + "engraving's wafer plus EU and time (" + String.format("%.1f", expected) + ", " + route + "), got " + ram);
         });
     }
 

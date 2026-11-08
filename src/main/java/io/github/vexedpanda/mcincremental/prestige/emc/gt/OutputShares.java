@@ -42,22 +42,33 @@ import net.minecraft.server.packs.resources.ResourceManager;
  *       to their values (an own output with no value weighs the average per unit of those that have one). So the
  *       outputs together are worth the inputs. A recipe whose other outputs already take the whole cost, or with
  *       nothing to split, keeps the #52 conversion: its outputs then gain, which only re-pricing can fix.</li>
-  <li>Except outputs valued by a GT tool craft: in a recipe whose outputs valued elsewhere are worth more than its
- *       inputs, those become its own, so a cheaper machine route sets their price (the lathe's rod; #69).</li>
+ *   <li>Except, in a recipe whose outputs valued elsewhere are worth more than its inputs: outputs valued by a GT tool
+ *       craft become its own, so a cheaper machine route sets their price (the lathe's rod; #69); and so does any
+ *       output worth more on its own than the recipe's whole cost (a desulfurized fuel priced by a distillery; #83).</li>
  *   <li>The shares are fixed, so they can't feed back into themselves within ProjectE's mapping. A share that would
  *       lower an output that leads back (within {@link #NEAR} of its value) to one of the recipe's inputs, or one that
  *       takes away more than {@link #NEAR} of the cost, could still pull a loop of recipes down to 0 as ProjectE
- *       walks it; those outputs get a fixed value instead (computed from the seed, then refreshed from {@link #PASSES}
- *       more private passes), which nothing can lower. Every other share is a fixed fraction of the inputs, so the
+ *       walks it; those outputs get a fixed value instead (computed from the seed, then refreshed from more private
+ *       passes until they settle), which nothing can lower. Every other share is a fixed fraction of the inputs, so the
  *       output follows the inputs' values.</li>
+ *   <li>The passes also catch what the seed can't see (#83): a recipe split by share whose outputs valued elsewhere
+ *       come to be worth more of its cost (its inputs fell) gets fixed values instead, and a recipe whose inputs only
+ *       get a value after the seed is split from the first pass that values them, with fixed values.</li>
  * </ul>
  */
 final class OutputShares {
     /** How close (relative) a route must be to an output's value to count as leading back, and the largest share
      *  taken away from the own outputs that is still applied as a fraction of the inputs. */
     static final double NEAR = 0.05;
-    /** Private passes after the seed that refresh the fixed values. */
+    /**
+     * Private passes after the seed that refresh the fixed values: at least {@link #PASSES}, then until no fixed value
+     * moves by more than {@link #SETTLED} of itself (and no recipe changes how it is split), at most {@link #MAX_PASSES}.
+     */
     static final int PASSES = 4;
+    static final int MAX_PASSES = 16;
+    static final double SETTLED = 0.0005;
+    /** How much (relative to the cost) a recipe split by share may make once its shares drift, before it gets fixed values. */
+    static final double DRIFT = 0.001;
 
     enum Kind { SEED, SPLIT, FIXED }
 
@@ -69,8 +80,8 @@ final class OutputShares {
     /** {@link Kind#FIXED}: each own output's weight among the own outputs, and its fixed value per run (null: #52). */
     private final double[][] weights;
     private final double[][] values;
-    /** Each recipe's cost at the seed's values, which its shares are fractions of. */
-    private final double[] seedCosts;
+    /** Whether the recipe has been classified: its inputs had values in the seed, or in a later pass. */
+    private final boolean[] planned;
     /** Nodes pinned at a fixed value (by other mappers, or listed fluids). */
     Set<NormalizedSimpleStack> pinned = Set.of();
 
@@ -83,16 +94,7 @@ final class OutputShares {
         shares = new BigFraction[n][];
         weights = new double[n][];
         values = new double[n][];
-        seedCosts = new double[n];
-    }
-
-    /** The recipes split by share, with their cost at the seed's values. */
-    Map<net.minecraft.resources.ResourceLocation, Double> splitSeedCosts() {
-        Map<net.minecraft.resources.ResourceLocation, Double> costs = new HashMap<>();
-        for (int r = 0; r < kinds.length; r++) {
-            if (kinds[r] == Kind.SPLIT && recipes.splits.get(r).id() != null) costs.put(recipes.splits.get(r).id(), seedCosts[r]);
-        }
-        return costs;
+        planned = new boolean[n];
     }
 
     /** The recipes whose cost is split across their outputs: by share ({@code fixed} false) or with fixed values. */
@@ -100,7 +102,7 @@ final class OutputShares {
         Set<net.minecraft.resources.ResourceLocation> ids = new HashSet<>();
         for (int r = 0; r < kinds.length; r++) {
             boolean match = fixed ? kinds[r] == Kind.FIXED && values[r] != null : kinds[r] == Kind.SPLIT;
-            if (match) ids.add(recipes.splits.get(r).id());
+            if (match && recipes.splits.get(r).id() != null) ids.add(recipes.splits.get(r).id());
         }
         return ids;
     }
@@ -119,18 +121,21 @@ final class OutputShares {
         RecordingCollector others = recordOtherMappers(self, serverResources, registryAccess, resourceManager);
         if (others == null) return result;
         boolean silenced = setLogFoundExploits(false);
+        int passes = 0;
         try {
             Map<NormalizedSimpleStack, Double> seed = result.generateValues(others, registryAccess);
             result.plan(others, seed);
-            for (int pass = 0; pass < PASSES; pass++) {
-                result.refresh(result.generateValues(others, registryAccess));
+            double moved = 1;
+            while (passes < MAX_PASSES && (passes < PASSES || moved > SETTLED)) {
+                moved = result.refresh(result.generateValues(others, registryAccess));
+                passes++;
             }
         } finally {
             if (silenced) setLogFoundExploits(MappingConfig.logExploits());
         }
-        McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: found output shares in {} ms ({} recipes split by "
-                + "share, {} with fixed values, {} keep the first-output conversion)", (System.nanoTime() - start) / 1_000_000,
-                result.count(Kind.SPLIT), result.count(Kind.FIXED), result.count(Kind.SEED));
+        McIncrementalPrestige.LOGGER.info("GT recipe EMC mapper: found output shares in {} ms and {} passes ({} recipes "
+                + "split by share, {} with fixed values, {} keep the first-output conversion)", (System.nanoTime() - start) / 1_000_000,
+                passes, result.count(Kind.SPLIT), result.count(Kind.FIXED), result.count(Kind.SEED));
         return result;
     }
 
@@ -184,68 +189,78 @@ final class OutputShares {
         pinned = recipes.pinned(others);
         double[] cost = new double[splits.size()];
         for (int r = 0; r < splits.size(); r++) {
-            Split split = splits.get(r);
-            cost[r] = cost(split, seed);
-            seedCosts[r] = cost[r];
-            int n = split.outputs().size();
-            own[r] = new boolean[n];
-            if (!(cost[r] > 0)) continue;
-            NormalizedSimpleStack first = split.outputs().get(0);
-            Double firstValue = seed.get(first);
-            boolean valuesFirst = firstValue == null || near(floorValue(cost[r] / split.amounts().get(0).doubleValue()), firstValue, 1e-9);
-            for (int k = 0; k < n; k++) {
-                NormalizedSimpleStack output = split.outputs().get(k);
-                own[r][k] = !pinned.contains(output) && (k == 0 && split.first() ? valuesFirst : !seed.containsKey(output));
-            }
-            ownToolCrafted(split, own[r], seed, cost[r]);
+            cost[r] = cost(splits.get(r), seed);
+            own[r] = new boolean[splits.get(r).outputs().size()];
+            planned[r] = cost[r] > 0;
+            if (planned[r]) findOwn(r, seed, cost[r]);
         }
         Map<NormalizedSimpleStack, Integer> loops = components(others, seed);
         for (int r = 0; r < splits.size(); r++) {
-            Split split = splits.get(r);
-            int n = split.outputs().size();
-            if (!(cost[r] > 0)) continue;
-            double kept = 0;
-            int owned = 0;
-            double ownValue = 0;
-            double ownAmount = 0;
-            for (int k = 0; k < n; k++) {
-                double amount = split.amounts().get(k).doubleValue();
-                Double value = seed.get(split.outputs().get(k));
-                if (!own[r][k]) {
-                    if (value != null) kept += amount * value;
-                } else {
-                    owned++;
-                    if (value != null) {
-                        ownValue += amount * value;
-                        ownAmount += amount;
-                    }
-                }
-            }
-            double rest = cost[r] - kept;
-            if (rest <= cost[r] * 1e-9) {
-                if (split.decomposition()) lowerAll(r, split, seed, pinned, cost[r]);
-                continue;
-            }
-            if (owned == 0 || (owned == 1 && kept == 0 && split.first() && own[r][0])) continue;
-            double perUnit = ownAmount > 0 ? ownValue / ownAmount : 1;
-            weights[r] = new double[n];
-            double total = 0;
-            for (int k = 0; k < n; k++) {
-                if (!own[r][k]) continue;
-                Double value = seed.get(split.outputs().get(k));
-                weights[r][k] = split.amounts().get(k).doubleValue() * (value != null ? value : perUnit);
-                total += weights[r][k];
-            }
-            for (int k = 0; k < n; k++) weights[r][k] /= total;
-            if (kept > NEAR * cost[r] || leadsBack(loops, split, own[r])) {
-                kinds[r] = Kind.FIXED;
-                values[r] = fixedValues(r, rest, null);
+            if (planned[r]) classify(r, seed, cost[r], loops);
+        }
+    }
+
+    /** Which outputs the recipe values itself, at these values (the seed's, or a later pass's). */
+    private void findOwn(int r, Map<NormalizedSimpleStack, Double> values, double cost) {
+        Split split = recipes.splits.get(r);
+        Double firstValue = values.get(split.outputs().get(0));
+        boolean valuesFirst = firstValue == null || near(floorValue(cost / split.amounts().get(0).doubleValue()), firstValue, 1e-9);
+        for (int k = 0; k < own[r].length; k++) {
+            NormalizedSimpleStack output = split.outputs().get(k);
+            own[r][k] = !pinned.contains(output) && (k == 0 && split.first() ? valuesFirst : !values.containsKey(output));
+        }
+        ownToolCrafted(split, own[r], values, cost);
+        if (split.first()) ownLargest(split, own[r], values, cost);
+    }
+
+    /**
+     * Splits the recipe's cost across its own outputs: by share, or with fixed values when a share would take away more
+     * than {@link #NEAR} of the cost or an own output leads back to an input ({@code loops} null: always fixed).
+     */
+    private void classify(int r, Map<NormalizedSimpleStack, Double> prices, double cost, Map<NormalizedSimpleStack, Integer> loops) {
+        Split split = recipes.splits.get(r);
+        int n = split.outputs().size();
+        double kept = 0;
+        int owned = 0;
+        double ownValue = 0;
+        double ownAmount = 0;
+        for (int k = 0; k < n; k++) {
+            double amount = split.amounts().get(k).doubleValue();
+            Double value = prices.get(split.outputs().get(k));
+            if (!own[r][k]) {
+                if (value != null) kept += amount * value;
             } else {
-                kinds[r] = Kind.SPLIT;
-                shares[r] = new BigFraction[n];
-                for (int k = 0; k < n; k++) {
-                    if (own[r][k]) shares[r][k] = roundUp(rest / cost[r] * weights[r][k]);
+                owned++;
+                if (value != null) {
+                    ownValue += amount * value;
+                    ownAmount += amount;
                 }
+            }
+        }
+        double rest = cost - kept;
+        if (rest <= cost * 1e-9) {
+            if (split.decomposition()) lowerAll(r, split, prices, pinned, cost);
+            return;
+        }
+        if (owned == 0 || (owned == 1 && kept == 0 && split.first() && own[r][0])) return;
+        double perUnit = ownAmount > 0 ? ownValue / ownAmount : 1;
+        weights[r] = new double[n];
+        double total = 0;
+        for (int k = 0; k < n; k++) {
+            if (!own[r][k]) continue;
+            Double value = prices.get(split.outputs().get(k));
+            weights[r][k] = split.amounts().get(k).doubleValue() * (value != null ? value : perUnit);
+            total += weights[r][k];
+        }
+        for (int k = 0; k < n; k++) weights[r][k] /= total;
+        if (loops == null || kept > NEAR * cost || leadsBack(loops, split, own[r])) {
+            kinds[r] = Kind.FIXED;
+            values[r] = fixedValues(r, rest, null);
+        } else {
+            kinds[r] = Kind.SPLIT;
+            shares[r] = new BigFraction[n];
+            for (int k = 0; k < n; k++) {
+                if (own[r][k]) shares[r][k] = roundUp(rest / cost * weights[r][k]);
             }
         }
     }
@@ -279,6 +294,42 @@ final class OutputShares {
         }
         if (craftedValue <= 0 || kept <= cost * (1 + 1e-9) || kept - craftedValue >= cost * (1 - 1e-9)) return;
         for (int k = 0; k < n; k++) own[k] |= crafted[k];
+    }
+
+    /**
+     * A recipe that makes its outputs for less than other routes value them sets the price of the largest ones
+     * (VexedPanda/Mc-incremental#83). When the outputs valued elsewhere are still worth more than the inputs (after
+     * {@link #ownToolCrafted}), the most valuable of them become its own, largest first, until the rest are worth less
+     * than the inputs: desulfurizing sulfuric heavy fuel values the heavy fuel at its cost less the hydrogen sulfide,
+     * below a distillery that gives the whole cost of a cracked fuel to the small part of it that is heavy fuel. Only as
+     * few outputs as needed are lowered, so a cheap input's byproducts (lava's metals) keep their value unless they make
+     * up the gain alone. Pinned outputs can't be lowered; decompositions are lowered in proportion instead
+     * ({@link #lowerAll}).
+     */
+    private void ownLargest(Split split, boolean[] own, Map<NormalizedSimpleStack, Double> seed, double cost) {
+        if (!(cost > 0)) return;
+        int n = own.length;
+        double kept = 0;
+        List<Integer> lowerable = new ArrayList<>();
+        double[] worth = new double[n];
+        for (int k = 0; k < n; k++) {
+            if (own[k]) continue;
+            NormalizedSimpleStack output = split.outputs().get(k);
+            Double value = seed.get(output);
+            if (value == null) continue;
+            worth[k] = split.amounts().get(k).doubleValue() * value;
+            kept += worth[k];
+            if (!pinned.contains(output)) lowerable.add(k);
+        }
+        if (kept <= cost * (1 + 1e-9)) return;
+        List<Integer> lowered = new ArrayList<>();
+        for (int k : lowerable) {
+            if (worth[k] <= cost * (1 + 1e-9)) continue;
+            lowered.add(k);
+            kept -= worth[k];
+        }
+        if (lowered.isEmpty() || kept >= cost * (1 - 1e-9)) return;
+        for (int k : lowered) own[k] = true;
     }
 
     /** Whether a GT tool craft gives the output its seed value. */
@@ -332,10 +383,26 @@ final class OutputShares {
         values[r] = fixedValues(r, left, null);
     }
 
-    /** Recomputes the fixed values from a pass's values, halfway from the previous ones (so they settle). */
-    private void refresh(Map<NormalizedSimpleStack, Double> pass) {
+    /**
+     * Recomputes the fixed values from a pass's values, halfway from the previous ones (so they settle), and the shares
+     * from the pass's values (VexedPanda/Mc-incremental#83): an output valued elsewhere keeps its value while the inputs
+     * may fall below the seed's, so a share taken from the seed would leave that output a larger part of the cost.
+     */
+    private double refresh(Map<NormalizedSimpleStack, Double> pass) {
         List<Split> splits = recipes.splits;
+        double moved = 0;
         for (int r = 0; r < splits.size(); r++) {
+            Kind before = kinds[r];
+            if (!planned[r]) {
+                planLate(r, pass);
+                if (kinds[r] != before) moved = 1;
+                continue;
+            }
+            if (kinds[r] == Kind.SPLIT) {
+                fixIfDrifted(r, splits.get(r), pass);
+                if (kinds[r] != before) moved = 1;
+                continue;
+            }
             if (kinds[r] != Kind.FIXED) continue;
             Split split = splits.get(r);
             double cost = cost(split, pass);
@@ -347,8 +414,61 @@ final class OutputShares {
                 if (value != null) kept += split.amounts().get(k).doubleValue() * value;
             }
             double rest = cost - kept;
-            values[r] = costed && rest > cost * 1e-9 ? fixedValues(r, rest, values[r]) : null;
+            double[] previous = values[r];
+            values[r] = costed && rest > cost * 1e-9 ? fixedValues(r, rest, previous) : null;
+            moved = Math.max(moved, moved(previous, values[r]));
         }
+        return moved;
+    }
+
+    /** How far a recipe's fixed values moved, relative to their total (to at least 1 EMC: {@code 1 / SETTLED}). */
+    private static double moved(double[] previous, double[] next) {
+        if (previous == null || next == null) return previous == next ? 0 : 1;
+        double before = 0;
+        double change = 0;
+        for (int k = 0; k < next.length; k++) {
+            before += previous[k];
+            change += Math.abs(next[k] - previous[k]);
+        }
+        return change / Math.max(before, 1 / SETTLED);
+    }
+
+    /**
+     * A recipe whose inputs only get a value after the seed (its inputs are made by recipes the seed doesn't split) is
+     * classified from the first pass that values them, always with fixed values: the loops are only known for the
+     * seed.
+     */
+    private void planLate(int r, Map<NormalizedSimpleStack, Double> pass) {
+        double cost = cost(recipes.splits.get(r), pass);
+        if (!(cost > 0)) return;
+        planned[r] = true;
+        findOwn(r, pass, cost);
+        classify(r, pass, cost, null);
+    }
+
+    /**
+     * Shares are fixed fractions of the cost, but an output valued elsewhere keeps its value: when the inputs fall below
+     * the seed's (or that output rises), it is worth a larger part of the cost and the recipe makes EMC
+     * (VexedPanda/Mc-incremental#83). Such a recipe gets fixed values from the pass's values instead, refreshed like the
+     * others. Shares themselves are never refreshed: taken from values they feed into, they pull loops down to 0.
+     */
+    private void fixIfDrifted(int r, Split split, Map<NormalizedSimpleStack, Double> pass) {
+        double cost = cost(split, pass);
+        if (!(cost > 0)) return;
+        double kept = 0;
+        double share = 0;
+        for (int k = 0; k < split.outputs().size(); k++) {
+            if (own[r][k]) {
+                share += shares[r][k].doubleValue();
+                continue;
+            }
+            Double value = pass.get(split.outputs().get(k));
+            if (value != null) kept += split.amounts().get(k).doubleValue() * value;
+        }
+        double rest = cost - kept;
+        if (share * cost <= rest + DRIFT * cost) return;
+        kinds[r] = Kind.FIXED;
+        values[r] = rest > cost * 1e-9 ? fixedValues(r, rest, null) : null;
     }
 
     private double[] fixedValues(int r, double rest, double[] previous) {
