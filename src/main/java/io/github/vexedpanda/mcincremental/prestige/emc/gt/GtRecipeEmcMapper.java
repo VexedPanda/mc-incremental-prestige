@@ -211,6 +211,8 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
         /** GT recipes given an EU and machine-time cost, and crafting recipes mapped because they use a GT tool. */
         int timed;
         int toolCrafting;
+        /** The crafting recipes that use a GT tool, by output (also in {@link #nodes}). */
+        final Map<NormalizedSimpleStack, List<RecordingCollector.Row>> toolCrafts = new HashMap<>();
 
         Recipes(Rates rates) {
             this.rates = rates;
@@ -299,7 +301,10 @@ public class GtRecipeEmcMapper implements IEMCMapper<NormalizedSimpleStack, Long
                     ingredients.mergeInt(node, 1, Integer::sum);
                 }
                 if (!tool || ingredients.isEmpty()) return;
-                nodes.addConversion(result.getCount(), NSSItem.createItem(result), ingredients);
+                NormalizedSimpleStack output = NSSItem.createItem(result);
+                nodes.addConversion(result.getCount(), output, ingredients);
+                toolCrafts.computeIfAbsent(output, x -> new ArrayList<>()).add(new RecordingCollector.Row(
+                        RecordingCollector.Kind.CONVERSION, output, result.getCount(), ingredients, null, null));
                 toolCrafting++;
             } catch (RuntimeException e) {
                 McIncrementalPrestige.LOGGER.debug("GT recipe EMC mapper: can't read crafting recipe {}", holder.id(), e);

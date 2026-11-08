@@ -42,6 +42,8 @@ import net.minecraft.server.packs.resources.ResourceManager;
  *       to their values (an own output with no value weighs the average per unit of those that have one). So the
  *       outputs together are worth the inputs. A recipe whose other outputs already take the whole cost, or with
  *       nothing to split, keeps the #52 conversion: its outputs then gain, which only re-pricing can fix.</li>
+  <li>Except outputs valued by a GT tool craft: in a recipe whose outputs valued elsewhere are worth more than its
+ *       inputs, those become its own, so a cheaper machine route sets their price (the lathe's rod; #69).</li>
  *   <li>The shares are fixed, so they can't feed back into themselves within ProjectE's mapping. A share that would
  *       lower an output that leads back (within {@link #NEAR} of its value) to one of the recipe's inputs, or one that
  *       takes away more than {@link #NEAR} of the cost, could still pull a loop of recipes down to 0 as ProjectE
@@ -182,6 +184,7 @@ final class OutputShares {
                 NormalizedSimpleStack output = split.outputs().get(k);
                 own[r][k] = !pinned.contains(output) && (k == 0 && split.first() ? valuesFirst : !seed.containsKey(output));
             }
+            ownToolCrafted(split, own[r], seed, cost[r]);
         }
         Map<NormalizedSimpleStack, Integer> loops = components(others, seed);
         for (int r = 0; r < splits.size(); r++) {
@@ -232,6 +235,55 @@ final class OutputShares {
                 }
             }
         }
+    }
+
+    /**
+     * A machine route cheaper than a GT tool craft sets the price (VexedPanda/Mc-incremental#69). When a recipe's outputs
+     * valued elsewhere are worth more than its inputs, those valued by a GT tool craft (the craft gives them their seed
+     * value) become its own, so they share what's left once the others are paid: the lathe turning an ingot into a rod
+     * and 2 small dusts values the rod at the rest of the ingot, its EU and its time, below the file craft's whole
+     * ingot. Only tool-crafted outputs are lowered: an instant craft ignores the byproducts a machine makes, while
+     * lowering byproducts valued by other machine recipes carries through the economy (#58). Left as it is when the
+     * outputs not valued by a tool craft alone are worth the inputs.
+     */
+    private void ownToolCrafted(Split split, boolean[] own, Map<NormalizedSimpleStack, Double> seed, double cost) {
+        if (!(cost > 0) || recipes.toolCrafts.isEmpty()) return;
+        int n = own.length;
+        boolean[] crafted = new boolean[n];
+        double kept = 0;
+        double craftedValue = 0;
+        for (int k = 0; k < n; k++) {
+            if (own[k]) continue;
+            NormalizedSimpleStack output = split.outputs().get(k);
+            Double value = seed.get(output);
+            if (value == null) continue;
+            double worth = split.amounts().get(k).doubleValue() * value;
+            kept += worth;
+            if (!pinned.contains(output) && toolCrafted(output, value, seed)) {
+                crafted[k] = true;
+                craftedValue += worth;
+            }
+        }
+        if (craftedValue <= 0 || kept <= cost * (1 + 1e-9) || kept - craftedValue >= cost * (1 - 1e-9)) return;
+        for (int k = 0; k < n; k++) own[k] |= crafted[k];
+    }
+
+    /** Whether a GT tool craft gives the output its seed value. */
+    private boolean toolCrafted(NormalizedSimpleStack output, double value, Map<NormalizedSimpleStack, Double> seed) {
+        for (RecordingCollector.Row craft : recipes.toolCrafts.getOrDefault(output, List.of())) {
+            double total = 0;
+            boolean costed = true;
+            for (Object2IntMap.Entry<NormalizedSimpleStack> entry : craft.ingredients().object2IntEntrySet()) {
+                Double v = seed.get(entry.getKey());
+                if (v == null) {
+                    costed = false;
+                    break;
+                }
+                total += entry.getIntValue() * v;
+            }
+            if (costed && near(floorValue(total / craft.outnumber()), value, 1e-9)) return true;
+        }
+        return false;
     }
 
     /**

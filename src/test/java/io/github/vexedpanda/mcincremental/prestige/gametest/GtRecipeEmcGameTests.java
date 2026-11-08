@@ -202,6 +202,70 @@ public class GtRecipeEmcGameTests {
                 .thenSucceed();
     }
 
+    /**
+     * A machine route cheaper than a GT tool craft sets the price (VexedPanda/Mc-incremental#69). A rod is crafted from
+     * one ingot with a file, which values it at a whole ingot; the lathe turns one ingot into a rod and 2 small dusts, so
+     * it must value the rod at what's left of the ingot, its EU and its time once the small dusts are paid for. Checked
+     * with the rates on (the tool craft is mapped only then) for RTM alloy and tungsten steel, the worst lathes in the
+     * Pack's audit.
+     */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "gt_emc_rates_lathe", timeoutTicks = 1200)
+    public static void aLatheCheaperThanAToolCraftSetsTheRodsValue(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        // Read with the rates on, asserted once they're off again, so a failure leaves the other tests' config alone.
+        List<Runnable> checks = new ArrayList<>();
+        helper.startSequence()
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> {
+                    Config.TIME_RATE.set(TEST_TIME_RATE);
+                    Config.EU_PRICE.set(TEST_EU_PRICE);
+                    GameTests.rebuildEmcMap(helper);
+                })
+                .thenWaitUntil(() -> GameTests.assertEmcMapBuilt(helper))
+                .thenExecute(() -> {
+                    // For the record (VexedPanda/Mc-incremental#69): the macerators and circuits with the rates on.
+                    for (String id : new String[] {"lv_macerator", "mv_macerator", "hv_macerator", "ev_macerator",
+                            "basic_integrated_circuit", "good_integrated_circuit", "advanced_integrated_circuit",
+                            "micro_processor_computer"}) {
+                        McIncrementalPrestige.LOGGER.info("GT recipe EMC with rates: {} {} EMC", id, emc(helper, "gtceu:" + id));
+                    }
+                    for (String material : new String[] {"rtm_alloy", "tungsten_steel"}) {
+                        String rodId = "gtceu:" + material + "_rod";
+                        boolean toolCraft = craftedWithAGtTool(helper, rodId);
+                        var holder = helper.getLevel().getServer().getRecipeManager()
+                                .byKey(ResourceLocation.parse("gtceu:lathe/lathe_" + material + "_to_rod"));
+                        boolean lathe = holder.isPresent() && holder.get().value() instanceof GTRecipe;
+                        double euAndTime = lathe ? euAndTime((GTRecipe) holder.get().value()) : 0;
+                        long ingot = emc(helper, "gtceu:" + material + "_ingot");
+                        long rod = emc(helper, rodId);
+                        long smallDust = emc(helper, "gtceu:small_" + material + "_dust");
+                        McIncrementalPrestige.LOGGER.info("GT recipe EMC with rates: {} ingot {}, rod {}, small dust {}; "
+                                + "lathe EU and time {}", material, ingot, rod, smallDust, String.format("%.1f", euAndTime));
+                        checks.add(() -> {
+                            helper.assertTrue(toolCraft, "Expected a crafting recipe making a " + material + " rod with a GT tool");
+                            helper.assertTrue(lathe, "Expected the " + material + " lathe recipe");
+                            helper.assertTrue(ingot > 0 && rod > 0 && smallDust > 0, material + " ingot, rod and small dust "
+                                    + "need EMC, got " + ingot + ", " + rod + ", " + smallDust);
+                            double cost = ingot + euAndTime;
+                            helper.assertTrue(rod + 2 * smallDust <= cost + rounding(cost), "A " + material + " rod and 2 "
+                                    + "small dusts (" + rod + " + 2 x " + smallDust + ") should be worth no more than the ingot ("
+                                    + ingot + ") plus the lathe's EU and time (" + String.format("%.1f", euAndTime) + ")");
+                        });
+                    }
+                })
+                .thenExecute(GtRecipeEmcGameTests::ratesOff)
+                .thenExecute(() -> checks.forEach(Runnable::run))
+                .thenSucceed();
+    }
+
+    /** A recipe's EU × the test EU price plus its seconds × the test time rate, at its tier (the spec of #67). */
+    private static double euAndTime(GTRecipe recipe) {
+        var eu = recipe.getInputEUt();
+        int tier = eu.isEmpty() ? 0 : com.gregtechceu.gtceu.utils.GTUtil.getTierByVoltage(eu.voltage());
+        return (double) eu.getTotalEU() * recipe.duration * Config.atTier(TEST_EU_PRICE, tier)
+                + recipe.duration / 20.0 * Config.atTier(TEST_TIME_RATE, tier);
+    }
+
     /** The overclock check: a time rate less than double the tier below's is warned about; doubling or more is fine. */
     @GameTest(template = GameTests.EMPTY_TEMPLATE)
     public static void aTimeRateLessThanDoubleTheTierBelowIsWarnedAbout(GameTestHelper helper) {
