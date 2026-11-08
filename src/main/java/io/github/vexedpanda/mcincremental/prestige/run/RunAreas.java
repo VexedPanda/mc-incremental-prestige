@@ -12,6 +12,8 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BiomeTags;
@@ -19,11 +21,13 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.border.WorldBorder;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
@@ -109,7 +113,8 @@ public final class RunAreas {
 
     /**
      * Starts a Run in {@code area} (from {@link #candidates}): records it as current, fits the world border to it and
-     * moves the world spawn to its safe spawn point. Doesn't move any player: call {@link #teleport} for each.
+     * moves the world spawn to its safe spawn point, waiting for the new spawn chunks ({@link #loadSpawnChunks}).
+     * Doesn't move any player: call {@link #teleport} for each.
      */
     public static RunArea beginRun(MinecraftServer server, RunArea area) {
         RunAreaData data = RunAreaData.get(server);
@@ -121,7 +126,37 @@ public final class RunAreas {
         border.setCenter(area.middleX(), area.middleZ());
         border.setSize(area.sizeBlocks());
         level.setDefaultSpawnPos(spawnPoint(level, area), 0);
+        long start = System.nanoTime();
+        int loaded = loadSpawnChunks(level);
+        McIncrementalPrestige.LOGGER.info("Spawn chunks of Run area {} loaded ({} chunks) in {} ms",
+                area.centre(), loaded, (System.nanoTime() - start) / 1_000_000);
         return area;
+    }
+
+    /**
+     * Loads the chunks the world spawn's ticket keeps, each to the status the ticket gives it, waiting for them, and
+     * returns how many it requested. {@code setDefaultSpawnPos} only moves the ticket, so the new spawn chunks would
+     * otherwise load in the background. If a {@code /stop} comes while such a load is in flight, vanilla's stop hangs:
+     * it removes the tickets, which cancels the load, then ticks the chunk maps with no time limit, and a chunk still
+     * claimed by the cancelled load is re-queued forever before the load's last step can run (#77, #84; pack-side
+     * notes in docs/candidate-areas.md, "Stopping the server").
+     */
+    public static int loadSpawnChunks(ServerLevel level) {
+        ChunkPos centre = new ChunkPos(level.getSharedSpawnPos());
+        // As setDefaultSpawnPos: a START ticket at distance spawnChunkRadius + 1 from full.
+        int ticketLevel = ChunkLevel.byStatus(FullChunkStatus.FULL) - (level.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS) + 1);
+        int count = 0;
+        for (int d = 0; ; d++) {
+            ChunkStatus status = ChunkLevel.generationStatus(ticketLevel + d);
+            if (status == null) return count;
+            for (int dx = -d; dx <= d; dx++) {
+                for (int dz = -d; dz <= d; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != d) continue;
+                    level.getChunk(centre.x + dx, centre.z + dz, status, true);
+                    count++;
+                }
+            }
+        }
     }
 
     /**

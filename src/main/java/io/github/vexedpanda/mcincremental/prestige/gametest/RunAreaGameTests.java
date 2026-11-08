@@ -11,10 +11,16 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Block;
@@ -156,6 +162,52 @@ public class RunAreaGameTests {
             }
         });
         helper.succeed();
+    }
+
+    /**
+     * A Run start leaves the new spawn chunks loaded, with no load or generation in flight, so a {@code /stop} right
+     * after it can't hang waiting for one (#84; docs/candidate-areas.md, "Stopping the server"). Checked straight after
+     * {@code beginRun}, before the server has ticked the chunk maps: a whole choice would hide it here, as the Run start
+     * snapshot loads the area's chunks and, on a superflat world, the spawn is the area's centre.
+     */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "run_area_spawn_chunks", timeoutTicks = 400)
+    public static void runStartLoadsTheNewSpawnChunks(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        List<RunArea> visited = RunAreas.visited(server);
+        PrestigeGameTests.withWorldRestored(helper, () -> {
+            try {
+                RunAreas.beginRun(server, RunAreas.candidates(server, 1).getFirst());
+                assertSpawnChunksLoaded(helper, server.overworld());
+            } finally {
+                RunAreas.replaceVisited(server, visited);
+            }
+        });
+        helper.succeed();
+    }
+
+    private static void assertSpawnChunksLoaded(GameTestHelper helper, ServerLevel level) {
+        ChunkPos centre = new ChunkPos(level.getSharedSpawnPos());
+        int radius = level.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS);
+        ChunkMap chunks = level.getChunkSource().chunkMap;
+        // Vanilla: the spawn chunks are full, and so is the ring around them (their ticket sits one level in).
+        for (int dx = -radius - 1; dx <= radius + 1; dx++) {
+            for (int dz = -radius - 1; dz <= radius + 1; dz++) {
+                ChunkHolder holder = chunks.getVisibleChunkIfPresent(ChunkPos.asLong(centre.x + dx, centre.z + dz));
+                helper.assertTrue(holder != null && holder.getChunkIfPresent(ChunkStatus.FULL) != null,
+                        "Spawn chunk " + new ChunkPos(centre.x + dx, centre.z + dz) + " should be loaded full");
+            }
+        }
+        // Every chunk the spawn ticket reaches is at the status its ticket level gives it: nothing in flight.
+        int reach = radius + 1 + ChunkStatus.getStatusList().size();
+        for (int dx = -reach; dx <= reach; dx++) {
+            for (int dz = -reach; dz <= reach; dz++) {
+                ChunkHolder holder = chunks.getVisibleChunkIfPresent(ChunkPos.asLong(centre.x + dx, centre.z + dz));
+                ChunkStatus status = holder == null ? null : ChunkLevel.generationStatus(holder.getTicketLevel());
+                if (status == null) continue;
+                helper.assertTrue(holder.getChunkIfPresent(status) != null, "Chunk " + holder.getPos()
+                        + " should be loaded to " + status + ", its ticket's status, not still loading");
+            }
+        }
     }
 
     /** A safe spawn: solid, dry block below; nothing solid or liquid at feet and head. */
