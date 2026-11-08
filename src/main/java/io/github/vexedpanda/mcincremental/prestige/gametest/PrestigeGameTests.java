@@ -82,7 +82,8 @@ public class PrestigeGameTests {
                     // The balance only grows, by what the inventory converts into.
                     helper.assertTrue(WorldEmc.balance(server).compareTo(balance) > 0,
                             "EMC balance should be kept and grow: " + balance + ", got " + WorldEmc.balance(server));
-                    helper.assertTrue(WorldEmc.knowledge(server).equals(knowledge), "Knowledge should be kept");
+                    // Kept, and only grows: the converted inventory is discovered (pack ADR-0009).
+                    helper.assertTrue(WorldEmc.knowledge(server).containsAll(knowledge), "Knowledge should be kept");
                     helper.assertTrue(WorldEmcGameTests.knowledge(player).getEmc().equals(WorldEmc.balance(server)),
                             "The player should still see the world balance");
                     player.discard();

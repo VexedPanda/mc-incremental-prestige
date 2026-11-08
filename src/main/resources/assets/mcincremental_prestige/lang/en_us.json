@@ -18,5 +18,6 @@
   "commands.mcincremental_prestige.prestige.nothing_offered": "No Candidate areas are offered (already chosen, or no Prestige yet)",
   "mcincremental_prestige.candidates.heading": "Choose where the next Run goes with /prestige choose <1-%s>:",
   "mcincremental_prestige.candidates.line": "  %s: around x %s, z %s (%s)",
+"mcincremental_prestige.discovery.discovered": "Discovered %s: the world can now make it from EMC",
   "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run"
 }

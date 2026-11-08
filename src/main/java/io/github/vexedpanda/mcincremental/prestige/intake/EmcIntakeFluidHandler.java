@@ -1,5 +1,6 @@
 package io.github.vexedpanda.mcincremental.prestige.intake;
 
+import io.github.vexedpanda.mcincremental.prestige.discovery.Discovery;
 import io.github.vexedpanda.mcincremental.prestige.emc.FluidEmc;
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
 import net.minecraft.server.MinecraftServer;
@@ -46,7 +47,7 @@ final class EmcIntakeFluidHandler implements IFluidHandler {
         if (server == null || !isFluidValid(0, resource)) return 0;
         if (action.execute()) {
             WorldEmc.addFluidEmc(server, resource.getFluid(), resource.getAmount());
-            WorldEmc.learnFluid(server, resource.getFluid());
+            Discovery.discoverFluid(server, resource.getFluid());
         }
         return resource.getAmount();
     }
