@@ -11,8 +11,12 @@
   "block.mcincremental_prestige.emc_intake.no_value": "%s has no EMC value, so the intake refuses it",
   "block.mcincremental_prestige.emc_intake.usage": "EMC intake: pipe in, or right-click with, any item or fluid that has EMC to add it to the world's EMC",
   "item.mcincremental_prestige.prestige": "Prestige",
-  "item.mcincremental_prestige.prestige.confirm": "Prestige? Every player's inventory will be wiped and a new Run will start. Use it once, then sneak and use it within %s seconds to confirm.",
+  "item.mcincremental_prestige.prestige.confirm": "Prestige? Every player's inventory will be converted into EMC, then you choose where the next Run goes. Use it once, then sneak and use it within %s seconds to confirm.",
   "mcincremental_prestige.prestige.summary": "Prestige complete: gained %s EMC from the old Run. EMC balance: %s",
-  "commands.mcincremental_prestige.prestige.success": "Prestiged: a new Run has started",
+  "commands.mcincremental_prestige.prestige.success": "Prestiged: %s Candidate areas are offered",
+  "commands.mcincremental_prestige.prestige.chosen": "Candidate area %s chosen: a new Run has started",
+  "commands.mcincremental_prestige.prestige.nothing_offered": "No Candidate areas are offered (already chosen, or no Prestige yet)",
+  "mcincremental_prestige.candidates.heading": "Choose where the next Run goes with /prestige choose <1-%s>:",
+  "mcincremental_prestige.candidates.line": "  %s: around x %s, z %s (%s)",
   "mcincremental_prestige.portal.blocked": "Portals do nothing during a Run"
 }

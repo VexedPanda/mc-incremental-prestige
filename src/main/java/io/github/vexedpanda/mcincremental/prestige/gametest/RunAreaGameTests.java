@@ -11,9 +11,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -28,7 +26,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Run area quality and config: ocean avoidance, safe spawn, and the server config values. Tests that run a Prestige or
+ * Run area quality and config: ocean biomes, safe spawn, and the server config values. Tests that run a Prestige or
  * change config have their own batch (batches run one after another) and put everything back.
  */
 @GameTestHolder(McIncrementalPrestige.MODID)
@@ -40,7 +38,7 @@ public class RunAreaGameTests {
         PrestigeGameTests.withWorldRestored(helper, () -> withConfig(RunAreaConfig.RADIUS_CHUNKS, 2, () -> {
             ServerPlayer player = GameTests.joinedPlayer(helper, "wide");
             try {
-                PrestigeGameTests.runPrestigeCommand(helper);
+                PrestigeGameTests.runPrestigeAndChoose(helper);
                 RunArea area = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area"));
                 ChunkPos c = area.centre();
                 double size = server.overworld().getWorldBorder().getSize();
@@ -65,7 +63,7 @@ public class RunAreaGameTests {
             // Two Prestiges, so the second has a previous area to measure from even in a fresh world.
             for (int i = 0; i < 2; i++) {
                 java.util.List<RunArea> earlier = RunAreas.visited(server);
-                PrestigeGameTests.runPrestigeCommand(helper);
+                PrestigeGameTests.runPrestigeAndChoose(helper);
                 RunArea area = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area"));
                 for (RunArea old : earlier) {
                     helper.assertTrue(old.distanceChunks(area) >= 16,
@@ -86,7 +84,7 @@ public class RunAreaGameTests {
     public static void sweepMarginConfigSetsHowFarTheRunSnapshotReaches(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         PrestigeGameTests.withWorldRestored(helper, () -> withConfig(RunAreaConfig.SWEEP_MARGIN_CHUNKS, 2, () -> {
-            PrestigeGameTests.runPrestigeCommand(helper);
+            PrestigeGameTests.runPrestigeAndChoose(helper);
             ChunkPos c = RunAreas.current(server).orElseThrow(() -> new GameTestAssertException("No Run area")).centre();
             // A 3x3 area with margin 2 is snapshotted (and so sweepable) 7x7: up to 3 chunks from the centre.
             helper.assertTrue(RunSnapshots.covers(server, new ChunkPos(c.x + 3, c.z - 3)),
@@ -94,21 +92,6 @@ public class RunAreaGameTests {
             helper.assertFalse(RunSnapshots.covers(server, new ChunkPos(c.x - 4, c.z)),
                     "Margin 2 should not cover the chunk 3 past the area's edge");
         }));
-        helper.succeed();
-    }
-
-    @GameTest(template = GameTests.EMPTY_TEMPLATE, batch = "run_area_ocean", timeoutTicks = 400)
-    public static void newRunAreasAreRepickedUntilTheCentreIsNotOcean(GameTestHelper helper) {
-        MinecraftServer server = helper.getLevel().getServer();
-        PrestigeGameTests.withWorldRestored(helper, () -> {
-            // The GameTest world is superflat plains, so stand in for oceans: the first 5 candidates checked are
-            // "ocean". (Not a region: in the persistent test world, earlier areas can crowd any fixed region.)
-            Set<ChunkPos> oceans = new HashSet<>();
-            RunArea area = RunAreas.beginRun(server, c -> oceans.contains(c) || oceans.size() < 5 && oceans.add(c));
-            helper.assertTrue(oceans.size() == 5, "The ocean check should have rejected 5 candidates, got " + oceans.size());
-            helper.assertFalse(oceans.contains(area.centre()), "Run area " + area.centre() + " is centred in a fake ocean");
-            helper.assertTrue(RunAreas.current(server).orElseThrow().equals(area), "The chosen area should be current");
-        });
         helper.succeed();
     }
 
@@ -163,7 +146,7 @@ public class RunAreaGameTests {
         PrestigeGameTests.withWorldRestored(helper, () -> {
             ServerPlayer player = GameTests.joinedPlayer(helper, "lander");
             try {
-                PrestigeGameTests.runPrestigeCommand(helper);
+                PrestigeGameTests.runPrestigeAndChoose(helper);
                 assertSafe(helper, server.overworld(), player.blockPosition());
                 helper.assertTrue(player.blockPosition().equals(server.overworld().getSharedSpawnPos()),
                         "The player should land on the world spawn, " + server.overworld().getSharedSpawnPos()

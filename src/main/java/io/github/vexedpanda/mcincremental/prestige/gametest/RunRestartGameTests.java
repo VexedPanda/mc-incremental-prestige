@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.neoforged.neoforge.common.IOUtilities;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -64,7 +65,7 @@ public class RunRestartGameTests {
                                     + ", got " + border.getCenterX() + "," + border.getCenterZ() + " size " + border.getSize());
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(placed).isAir(),
                             "The diamond block placed before the restart should be swept, found " + level.getBlockState(placed));
@@ -85,6 +86,8 @@ public class RunRestartGameTests {
         // Shutdown's save: writes each level's saved data and copies the live border into the level data. Forced, as
         // the GameTest level may have saving off.
         server.saveAllChunks(true, false, true);
+        // NeoForge writes saved data on an IO worker; shutdown waits for it, and so must we before reading it back.
+        IOUtilities.waitUntilIOWorkerComplete();
         evictModSavedData(server.overworld().getDataStorage());
         WorldBorder border = server.overworld().getWorldBorder();
         border.setCenter(0, 0);

@@ -18,53 +18,81 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.common.util.FakePlayer;
 
 /**
- * The Prestige controller: ends the world's current Run and starts a new one (ADR-0001, ADR-0004). Everything here is
- * world-global: a Prestige affects every player in the world. Server thread only.
+ * The Prestige controller: ends the world's current Run, offers Candidate areas for the next one and starts it in the
+ * chosen area (ADR-0001, ADR-0004, ADR-0008). Everything here is world-global: a Prestige affects every player in the
+ * world, and any of them (or the console) chooses for all. Server thread only.
  */
 public final class Prestige {
     private Prestige() {}
 
     /**
-     * Runs a Prestige for the world: sweeps the current Run area into the world's EMC balance, converts every player's
-     * ender chest and inventory into EMC (crediting them, then emptying them) and gives them the starting items, starts
-     * a new Run area (border and world spawn move to it), snapshots it and teleports every player there. Knowledge is
-     * untouched, and the balance only grows by what the sweep and the conversion credit.
+     * Runs a Prestige for the world, the first of its two steps: sweeps the current Run area into the world's EMC
+     * balance, converts every player's ender chest and inventory into EMC (crediting them, then emptying them), then
+     * offers {@link CandidateAreas#COUNT} Candidate areas for the next Run, holding every player still until one is
+     * chosen ({@link #choose}). Knowledge is untouched, and the balance only grows by what the sweep and the
+     * conversion credit.
      *
-     * @return the new Run area
+     * <p>While candidates are already offered, a Prestige only re-rolls them: the old area is already swept and the
+     * players already converted, so nothing is swept or converted again.
+     *
+     * @return the Candidate areas now offered
      */
-    public static RunArea run(MinecraftServer server) {
+    public static List<RunArea> run(MinecraftServer server) {
+        if (CandidateAreas.isOffered(server)) {
+            CandidateAreas.offer(server, RunAreas.candidates(server, CandidateAreas.COUNT));
+            McIncrementalPrestige.LOGGER.info("Prestige: re-rolled the Candidate areas");
+            return CandidateAreas.offered(server);
+        }
         long start = System.nanoTime();
         EmcCredit credit = PrestigeSweep.sweep(server);
         long sweptAt = System.nanoTime();
-        List<ServerPlayer> players = players(server);
-        for (ServerPlayer player : players) {
+        for (ServerPlayer player : players(server)) {
             // Owner decisions: ender chests on #30, online inventories on #57.
             credit.addAndClear(player.getEnderChestInventory());
             convertInventory(player, credit);
-            StartingItems.give(player);
+            CandidateAreas.markConverted(server, player.getUUID());
         }
         credit.creditTo(server);
         McIncrementalPrestige.LOGGER.info("Prestige: sweep, inventories and ender chests credited {} in {} ms", credit, (sweptAt - start) / 1_000_000);
-        return startRun(server, players);
+        CandidateAreas.offer(server, RunAreas.candidates(server, CandidateAreas.COUNT));
+        return CandidateAreas.offered(server);
     }
 
     /**
-     * Starts the world's first Run if it has none yet: a new Run area, as after a Prestige, but with no sweep, wipe or
-     * starting items. Does nothing for a world that already has a Run.
+     * The second step of a Prestige: starts the Run in Candidate area {@code number} (from 1) for everyone, with the
+     * usual Run start (border, world spawn, Run snapshot, starting items, teleport). The first choice wins: with no
+     * candidates offered (none yet, or already chosen) it does nothing.
+     *
+     * @return the new Run area, or empty if nothing was chosen
+     */
+    public static Optional<RunArea> choose(MinecraftServer server, int number) {
+        Optional<RunArea> chosen = CandidateAreas.take(server, number);
+        chosen.ifPresent(area -> {
+            List<ServerPlayer> players = players(server);
+            for (ServerPlayer player : players) StartingItems.topUp(player);
+            startRun(server, area, players);
+        });
+        return chosen;
+    }
+
+    /**
+     * Starts the world's first Run if it has none yet: a new Run area, picked as a candidate would be but with no
+     * choice, and no sweep, wipe or starting items. Does nothing for a world that already has a Run.
      *
      * @return the first Run area, or empty if the world already had a Run
      */
     public static Optional<RunArea> startFirstRun(MinecraftServer server) {
         if (RunAreas.current(server).isPresent()) return Optional.empty();
-        return Optional.of(startRun(server, players(server)));
+        return Optional.of(startRun(server, RunAreas.candidates(server, 1).getFirst(), players(server)));
     }
 
     /**
-     * Starts a new Run: the single place a Run begins, for a Prestige and for the world's first Run. Chooses a new Run
-     * area (border and world spawn move to it), takes its Run start snapshot and teleports the players there.
+     * Starts a new Run in {@code area}: the single place a Run begins, after a choice and for the world's first Run.
+     * Makes it the current Run area (border and world spawn move to it), takes its Run start snapshot and teleports
+     * the players there.
      */
-    private static RunArea startRun(MinecraftServer server, List<ServerPlayer> players) {
-        RunArea area = RunAreas.beginRun(server);
+    private static RunArea startRun(MinecraftServer server, RunArea area, List<ServerPlayer> players) {
+        RunAreas.beginRun(server, area);
         long snapshotStart = System.nanoTime();
         RunSnapshots.take(server, area);
         McIncrementalPrestige.LOGGER.info("New Run area {} snapshotted in {} ms",

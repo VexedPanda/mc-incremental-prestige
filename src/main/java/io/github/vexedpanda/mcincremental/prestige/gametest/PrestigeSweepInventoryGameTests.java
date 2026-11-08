@@ -73,7 +73,7 @@ public class PrestigeSweepInventoryGameTests {
                     f.setItem(2, new ItemStack(Items.DIAMOND, 1));
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     for (BlockPos pos : List.of(left, right, furnace)) {
                         helper.assertTrue(level.getBlockState(pos).isAir(), "Placed block at " + pos + " should be swept");
@@ -105,7 +105,7 @@ public class PrestigeSweepInventoryGameTests {
                     BigInteger before = WorldEmc.balance(server);
                     long fraction = WorldEmc.fractionalMilliEmc(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(source).isAir(), "The placed lava should be swept, found "
                             + level.getBlockState(source));
@@ -133,7 +133,7 @@ public class PrestigeSweepInventoryGameTests {
                     BigInteger before = WorldEmc.balance(server);
                     long fraction = WorldEmc.fractionalMilliEmc(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(source).is(Blocks.WATER), "Water (no EMC value) should be left alone");
                     // The cauldron itself is still swept at its own value; the water in it is worth nothing.
@@ -159,7 +159,7 @@ public class PrestigeSweepInventoryGameTests {
                     RunSnapshots.take(server, area);
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockEntity(pos) instanceof ChestBlockEntity chest
                             && BuiltInLootTables.SIMPLE_DUNGEON.equals(chest.getLootTable()),
@@ -184,7 +184,7 @@ public class PrestigeSweepInventoryGameTests {
                         // The player holds only the starting tablet, worth 0, so the ender chest is the whole credit.
                         BigInteger before = WorldEmc.balance(server);
 
-                        PrestigeGameTests.runPrestigeCommand(helper);
+                        PrestigeGameTests.runPrestigeAndChoose(helper);
 
                         helper.assertTrue(player.getEnderChestInventory().isEmpty(), "The ender chest should be emptied");
                         assertCredited(helper, before, 3 * 8192L + 10 * 256L);
