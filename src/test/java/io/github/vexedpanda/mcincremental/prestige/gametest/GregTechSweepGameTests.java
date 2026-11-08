@@ -87,7 +87,7 @@ public class GregTechSweepGameTests {
                     helper.assertTrue(casing > 0, "The heatproof machine casing needs EMC, got " + casing);
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     for (BlockPos pos : structure) {
                         helper.assertTrue(level.getBlockState(pos).isAir(), "Every EBF block should be swept, found "
@@ -117,7 +117,7 @@ public class GregTechSweepGameTests {
                     helper.assertTrue(rest.isEmpty(), "The furnace should take the iron, left " + rest);
                     BigInteger before = WorldEmc.balance(server);
 
-                    PrestigeGameTests.runPrestigeCommand(helper);
+                    PrestigeGameTests.runPrestigeAndChoose(helper);
 
                     helper.assertTrue(level.getBlockState(pos).isAir(), "The GT furnace should be swept");
                     PrestigeSweepInventoryGameTests.assertNoItemEntities(helper, area);
@@ -136,7 +136,7 @@ public class GregTechSweepGameTests {
             helper.assertTrue(logic.getProgress() < logic.getDuration(), "The recipe should still be running");
             BigInteger before = WorldEmc.balance(level.getServer());
 
-            PrestigeGameTests.runPrestigeCommand(helper);
+            PrestigeGameTests.runPrestigeAndChoose(helper);
 
             helper.assertTrue(level.getBlockState(pos).isAir(), "The alloy smelter should be swept");
             // The smelter, plus the 3 copper ingots (128 each) and tin ingot (256) its recipe took out of its slots
@@ -160,7 +160,7 @@ public class GregTechSweepGameTests {
             helper.assertTrue(bronzeEmc > 0, "Bronze needs EMC for this test to mean anything");
             BigInteger before = WorldEmc.balance(level.getServer());
 
-            PrestigeGameTests.runPrestigeCommand(helper);
+            PrestigeGameTests.runPrestigeAndChoose(helper);
 
             // The smelter and the 4 bronze ingots it made; not the copper and tin the finished recipe used.
             assertCredited(helper, before, smelter + bronzeEmc);
