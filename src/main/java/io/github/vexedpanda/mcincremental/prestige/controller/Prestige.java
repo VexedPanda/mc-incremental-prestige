@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import io.github.vexedpanda.mcincremental.prestige.McIncrementalPrestige;
+import io.github.vexedpanda.mcincremental.prestige.network.CandidateNetwork;
 import io.github.vexedpanda.mcincremental.prestige.sweep.PrestigeSweep;
 import io.github.vexedpanda.mcincremental.prestige.sweep.EmcCredit;
 import io.github.vexedpanda.mcincremental.prestige.sweep.RunSnapshots;
@@ -60,7 +61,8 @@ public final class Prestige {
 
     /**
      * The second step of a Prestige: starts the Run in Candidate area {@code number} (from 1) for everyone, with the
-     * usual Run start (border, world spawn, Run snapshot, starting items, teleport). The first choice wins: with no
+     * usual Run start (border, world spawn, Run snapshot, starting items, teleport), and closes every player's Candidate
+     * selection screen. The command and the screen both choose through here. The first choice wins: with no
      * candidates offered (none yet, or already chosen) it does nothing.
      *
      * @return the new Run area, or empty if nothing was chosen
@@ -71,6 +73,8 @@ public final class Prestige {
             List<ServerPlayer> players = players(server);
             for (ServerPlayer player : players) StartingItems.topUp(player);
             startRun(server, area, players);
+            // Nothing is offered any more: this closes every player's Candidate selection screen.
+            for (ServerPlayer player : players) CandidateNetwork.send(player);
         });
         return chosen;
     }

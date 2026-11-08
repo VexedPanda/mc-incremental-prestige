@@ -4,14 +4,15 @@ import java.math.BigInteger;
 import java.util.List;
 
 import io.github.vexedpanda.mcincremental.prestige.emc.WorldEmc;
+import io.github.vexedpanda.mcincremental.prestige.network.CandidateNetwork;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
  * Runs a Prestige and tells every player what it gave: the EMC gained (the world's balance after minus before, which is
- * what the Prestige sweep added) and the new balance, then lists the Candidate areas offered. A re-roll only lists the
- * new candidates. Server thread only.
+ * what the Prestige sweep added) and the new balance, then lists the Candidate areas offered in chat and opens the
+ * Candidate selection screen with them. A re-roll only lists the new candidates and refreshes the screen. Server thread only.
  */
 public final class PrestigeSummary {
     private PrestigeSummary() {}
@@ -27,6 +28,7 @@ public final class PrestigeSummary {
         for (ServerPlayer player : Prestige.players(server)) {
             if (!reroll) player.sendSystemMessage(summary);
             CandidateAreas.list(player);
+            CandidateNetwork.send(player);
         }
         return candidates;
     }
