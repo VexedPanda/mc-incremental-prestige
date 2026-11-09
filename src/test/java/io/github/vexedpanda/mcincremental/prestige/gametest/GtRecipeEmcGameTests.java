@@ -210,6 +210,37 @@ public class GtRecipeEmcGameTests {
         });
     }
 
+    /**
+     * Distilling liquid ender air makes deuterium and tritium for less than the centrifuge chain values them
+     * (VexedPanda/Mc-incremental#63, "2a"): neither alone takes up the gain, but together they do, so the tower (largest
+     * first) sets both their values and its outputs are worth no more than its inputs plus its EU and time. Also logs
+     * the values the rule can lower, to compare against a run before it.
+     */
+    @GameTest(template = GameTests.EMPTY_TEMPLATE, timeoutTicks = 600)
+    public static void distillingLiquidEnderAirSetsDeuteriumAndTritiumsValues(GameTestHelper helper) {
+        GameTests.rebuildEmcMap(helper);
+        helper.succeedWhen(() -> {
+            GameTests.assertEmcMapBuilt(helper);
+            ResourceLocation id = ResourceLocation.parse("gtceu:distillation_tower/distill_liquid_ender_air");
+            double[] sides = sides(helper, id);
+            double cost = sides[0] + euAndTime(gtRecipe(helper, id.toString()));
+            StringBuilder values = new StringBuilder();
+            for (String fluid : new String[] {"deuterium", "tritium", "helium", "helium_3", "argon", "ethylene", "propene",
+                    "epoxy", "oil", "heavy_fuel", "light_fuel", "naphtha", "liquid_ender_air"}) {
+                values.append(' ').append(fluid).append(' ')
+                        .append(FluidEmc.valuePerBucket(BuiltInRegistries.FLUID.get(ResourceLocation.parse("gtceu:" + fluid))));
+            }
+            for (String item : new String[] {"gtceu:copper_dust", "gtceu:gold_dust", "gtceu:hematite_dust",
+                    "gtceu:steel_ingot", "gtceu:lv_macerator", "gtceu:hv_macerator", "gtceu:basic_electronic_circuit"}) {
+                values.append(' ').append(item).append(' ').append(emc(helper, item));
+            }
+            McIncrementalPrestige.LOGGER.info("GT recipe EMC: {} costs {} and makes {}; values:{}", id,
+                    String.format("%.1f", cost), String.format("%.1f", sides[1]), values);
+            helper.assertTrue(sides[1] <= cost + rounding(cost), id + " should make no more EMC than it costs ("
+                    + String.format("%.1f", cost) + "), made " + String.format("%.1f", sides[1]));
+        });
+    }
+
     /** The lathe turning a material's ingot into a rod and 2 small dusts: those are worth no more than the ingot + EU + time. */
     private static void assertLatheBalanced(GameTestHelper helper, String material) {
         var holder = helper.getLevel().getServer().getRecipeManager()

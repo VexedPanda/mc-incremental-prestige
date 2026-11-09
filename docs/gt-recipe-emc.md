@@ -81,11 +81,18 @@ its own conversion costing its share of the inputs. The shares are found before 
    gaining recipe whose first output is guaranteed (not recycling), two kinds of output are lowered, becoming its own:
    - outputs valued by a GT tool craft (#69): an instant craft ignores the byproducts a machine makes, so the machine's
      price is the fair one;
-   - outputs worth more on their own than the recipe's whole cost (#83): the recipe is a cheaper route to them.
+   - outputs worth more on their own than the recipe's whole cost (#83), and then (#63) the next most valuable ones,
+     largest first, until the rest are worth less than the inputs: the recipe is a cheaper route to them. Outputs with
+     no seed value are left out, and if the rest can't be brought under the inputs (pinned outputs worth more),
+     nothing is lowered.
      Desulfurizing 8000 mB of sulfuric heavy fuel makes 8000 mB of heavy fuel and 1000 mB of hydrogen sulfide; in the
      Pack a distillery valued heavy fuel at 59,101 per 1000 mB, giving the whole cost of a cracked light fuel to the
      150 mB of heavy fuel in it, so desulfurizing gained about 470,000 EMC a run. Heavy fuel now takes the
-     desulfurization's cost less the hydrogen sulfide.
+     desulfurization's cost less the hydrogen sulfide. Distilling liquid ender air (IV) makes 50 B of deuterium and 10
+     B of tritium, which the slow centrifuge chain valued at 1,563 and 8,880 per bucket in the Pack: tritium alone
+     (88,800) was worth more than the tower's whole cost (83,355), but the other outputs were still worth more than
+     it, so until #63 nothing was lowered and the tower gained about 145,000 EMC a run. Now tritium and deuterium both
+     become its own and share what the rest leave of the cost (GameTest prices: 1,187 and 209 per bucket).
 
    The rest is left as #52 had it (its first output takes the whole cost when it is that output's route): lowering
    byproducts valued by other recipes carries through to everything made from them. In the GameTest prices, lowering
@@ -93,7 +100,12 @@ its own conversion costing its share of the inputs. The shares are found before 
    clay, lava or netherrack whose byproducts are priced as rare materials); lowering them until the rest is worth less
    than the inputs, largest first, still pulled the oil chain to 0 (two fractions of oil each worth half the gain) and
    lowered copper and gold through recycling. Lowering only outputs worth more than the whole cost, and never in
-   recycling, keeps the macerators and circuits within 3-22% of their old values.
+   recycling, keeps the macerators and circuits within 3-22% of their old values. On #63 ("2a") lowering largest first
+   whenever the rest are worth more than the inputs was tried again: in the GameTest prices it fired on about 45 more
+   recipes (oil, cracked fuel and refinery gas distillations, pyrolyse ovens, Prussian blue, epoxy, polydimethylsiloxane,
+   netherrack) and pulled heavy and light fuel to 0, sulfuric heavy fuel with them, naphtha from 290 to 30 and copper
+   dust from 108 to 72. So the rule still starts only from an output worth more than the whole cost; going on to the
+   next largest from there changes only the liquid ender air distillation in the GameTest prices.
 5. **Fixed proportions, and no loops.** The shares never change within ProjectE's mapping: taking them from the values
    being computed would let them feed on themselves. A share that lowers an output is still dangerous when that output
    leads back to one of the recipe's inputs: ProjectE walks the loop again and again and pulls everything on it to 0

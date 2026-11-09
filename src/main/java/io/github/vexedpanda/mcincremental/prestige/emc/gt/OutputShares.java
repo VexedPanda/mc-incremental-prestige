@@ -44,7 +44,8 @@ import net.minecraft.server.packs.resources.ResourceManager;
  *       nothing to split, keeps the #52 conversion: its outputs then gain, which only re-pricing can fix.</li>
  *   <li>Except, in a recipe whose outputs valued elsewhere are worth more than its inputs: outputs valued by a GT tool
  *       craft become its own, so a cheaper machine route sets their price (the lathe's rod; #69); and so does any
- *       output worth more on its own than the recipe's whole cost (a desulfurized fuel priced by a distillery; #83).</li>
+ *       output worth more on its own than the recipe's whole cost (a desulfurized fuel priced by a distillery; #83), then
+ *       the next largest until the rest are worth less than the cost (deuterium after tritium from liquid ender air; #63).</li>
  *   <li>The shares are fixed, so they can't feed back into themselves within ProjectE's mapping. A share that would
  *       lower an output that leads back (within {@link #NEAR} of its value) to one of the recipe's inputs, or one that
  *       takes away more than {@link #NEAR} of the cost, could still pull a loop of recipes down to 0 as ProjectE
@@ -301,10 +302,12 @@ final class OutputShares {
      * (VexedPanda/Mc-incremental#83). When the outputs valued elsewhere are still worth more than the inputs (after
      * {@link #ownToolCrafted}), the most valuable of them become its own, largest first, until the rest are worth less
      * than the inputs: desulfurizing sulfuric heavy fuel values the heavy fuel at its cost less the hydrogen sulfide,
-     * below a distillery that gives the whole cost of a cracked fuel to the small part of it that is heavy fuel. Only as
-     * few outputs as needed are lowered, so a cheap input's byproducts (lava's metals) keep their value unless they make
-     * up the gain alone. Pinned outputs can't be lowered; decompositions are lowered in proportion instead
-     * ({@link #lowerAll}).
+     * below a distillery that gives the whole cost of a cracked fuel to the small part of it that is heavy fuel; and
+     * distilling liquid ender air values its tritium (worth more than the tower's whole cost) and then its deuterium too
+     * (#63), as the rest are still worth more than the inputs once tritium is lowered. It fires only when the largest
+     * output alone is worth more than the whole cost; then as few outputs as needed are lowered, the most valuable first.
+     * Pinned outputs can't be lowered, outputs with no seed value are left out, and if the rest can't be brought under
+     * the inputs nothing is lowered; decompositions are lowered in proportion instead ({@link #lowerAll}).
      */
     private void ownLargest(Split split, boolean[] own, Map<NormalizedSimpleStack, Double> seed, double cost) {
         if (!(cost > 0)) return;
@@ -322,13 +325,17 @@ final class OutputShares {
             if (!pinned.contains(output)) lowerable.add(k);
         }
         if (kept <= cost * (1 + 1e-9)) return;
+        lowerable.sort((a, b) -> Double.compare(worth[b], worth[a]));
+        // Only when the largest is worth more than the whole cost on its own: lowering outputs that only together make
+        // up the gain pulled the oil chain to 0 (two fractions of oil each worth part of it; #63 "2a").
+        if (lowerable.isEmpty() || worth[lowerable.get(0)] <= cost * (1 + 1e-9)) return;
         List<Integer> lowered = new ArrayList<>();
         for (int k : lowerable) {
-            if (worth[k] <= cost * (1 + 1e-9)) continue;
+            if (kept < cost * (1 - 1e-9)) break;
             lowered.add(k);
             kept -= worth[k];
         }
-        if (lowered.isEmpty() || kept >= cost * (1 - 1e-9)) return;
+        if (kept >= cost * (1 - 1e-9)) return;
         for (int k : lowered) own[k] = true;
     }
 
